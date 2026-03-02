@@ -5,7 +5,7 @@ This document explains how to configure and customize your RAG pipeline using th
 * Initialize a vector store
 * Download and point to a local embedding model
 * Configure an inference provider (LLM)
-* Choose a RAG strategy (Always RAG or Tool RAG)
+* Choose a RAG strategy (inline RAG or Tool RAG)
 
 ---
 
@@ -28,8 +28,8 @@ This document explains how to configure and customize your RAG pipeline using th
 
 Lightspeed Core Stack (LCS) supports two complementary RAG strategies:
 
-- **Always RAG**: context is fetched from Solr and/or BYOK vector stores and injected into every query before the LLM responds. No tool calls are required.
-- **Tool RAG**: the LLM can call the `file_search` tool during generation to retrieve context on demand from BYOK vector stores.
+- **Inline RAG**: context is fetched from all vector stores and injected into every query before the LLM responds. No tool calls are required. Solr and other vector stores are supported.
+- **Tool RAG**: the LLM can call the `file_search` tool during generation to retrieve context on demand. All vector stores—including Solr—are available to the tool.
 
 Both strategies can be enabled independently via the `rag` section of `lightspeed-stack.yaml`. See [BYOK Feature Documentation](byok_guide.md) for configuration details.
 
@@ -324,11 +324,11 @@ Note: if the vector database (portal-rag) is not in the persistent data store wi
 
 ```yaml
 rag:
-  always:
-    solr:
-      enabled: true     # Enable Solr vector IO (Always RAG - pre-query injection)
-      offline: true     # Use parent_id for document URLs (offline mode)
-                        # Set to false to use reference_url (online mode)
+  inline:
+    vector_store_ids: ["*"]   # or [portal-rag] to use Solr
+  vector_stores:
+    portal-rag:
+      offline: true   # Use parent_id for document URLs; false = reference_url
 ```
 
 **Query Request Example:**
@@ -347,7 +347,7 @@ curl -sX POST http://localhost:8080/v1/query \
    - `score_threshold`: Minimum similarity score (default: 0.0)  
    - `mode`: Search mode (default: "hybrid")
 3. Results include document metadata and source URLs
-4. Document URLs are built based on the `offline` setting:
+4. Document URLs are built from the Solr vector store's `offline` option (rag.vector_stores.portal-rag.offline):
    - **Offline mode**: Uses `parent_id` with Mimir base URL
    - **Online mode**: Uses `reference_url` from document metadata
 

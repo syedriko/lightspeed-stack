@@ -156,7 +156,7 @@ async def query_endpoint_handler(
 
     client = AsyncLlamaStackClientHolder().get_client()
 
-    # Build RAG context from BYOK and Solr sources
+    # Build RAG context from all vector stores (inline RAG)
     rag_context = await build_rag_context(client, query_request, configuration)
 
     # Inject RAG context into query
@@ -199,7 +199,7 @@ async def query_endpoint_handler(
         rag_id_mapping,
     )
 
-    # Merge RAG chunks (BYOK + Solr) with tool-based RAG chunks
+    # Merge RAG chunks (inline + tool) with tool-based RAG chunks
     rag_chunks = rag_context.rag_chunks
     tool_rag_chunks = turn_summary.rag_chunks or []
     logger.info("RAG as a tool retrieved %d chunks", len(tool_rag_chunks))

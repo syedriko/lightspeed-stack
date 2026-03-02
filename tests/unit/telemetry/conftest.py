@@ -17,6 +17,7 @@ from models.config import (
     Customization,
     DatabaseConfiguration,
     InferenceConfiguration,
+    InlineRagConfiguration,
     JwkConfiguration,
     JsonPathOperator,
     JwtConfiguration,
@@ -24,9 +25,11 @@ from models.config import (
     LlamaStackConfiguration,
     ModelContextProtocolServer,
     PostgreSQLDatabaseConfiguration,
+    RagConfiguration,
     ServiceConfiguration,
     SQLiteDatabaseConfiguration,
     TLSConfiguration,
+    ToolRagConfiguration,
     UserDataCollection,
 )
 
@@ -293,7 +296,11 @@ def build_fully_populated_config() -> Configuration:
         azure_entra_id=None,
         splunk=None,
         deployment_environment="production",
-        solr=None,
+        rag=RagConfiguration.model_construct(
+            inline=InlineRagConfiguration.model_construct(vector_store_ids=None),
+            tool=ToolRagConfiguration.model_construct(vector_store_ids=None),
+            vector_stores=None,
+        ),
     )
 
 
@@ -369,7 +376,11 @@ def build_minimal_config() -> Configuration:
         azure_entra_id=None,
         splunk=None,
         deployment_environment="development",
-        solr=None,
+        rag=RagConfiguration.model_construct(
+            inline=InlineRagConfiguration.model_construct(vector_store_ids=None),
+            tool=ToolRagConfiguration.model_construct(vector_store_ids=None),
+            vector_stores=None,
+        ),
     )
 
 

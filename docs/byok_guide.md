@@ -34,19 +34,17 @@ BYOK (Bring Your Own Knowledge) is Lightspeed Core's implementation of Retrieval
 
 ## How BYOK Works
 
-BYOK knowledge sources can be queried in two complementary modes, configured independently:
+Knowledge sources (vector stores) can be queried in two complementary modes, configured independently:
 
-### Always RAG (pre-query injection)
+### Inline RAG (pre-query injection)
 
-Context is fetched from your BYOK vector stores and/or Solr **before** the LLM generates a response, and injected into every query automatically. No tool calls are required.
+Context is fetched from **all** configured vector stores **before** the LLM generates a response, and injected into every query automatically. No tool calls are required. All vector stores—including Solr—participate when inline RAG is enabled.
 
 ```mermaid
 graph TD
     A[User Query] --> B[Fetch Context]
-    B --> C[BYOK Vector Stores]
-    B --> D[Solr OKP]
+    B --> C[Vector Stores]
     C --> E[Retrieved Chunks]
-    D --> E
     E --> F[Inject Context into Prompt Context]
     F --> G[LLM Generates Response]
     G --> H[Response to User]
@@ -54,31 +52,31 @@ graph TD
 
 ### Tool RAG (on-demand retrieval)
 
-The LLM can call the `file_search` tool during generation when it decides external knowledge is needed. Only BYOK vector stores are supported in Tool RAG mode.
+The LLM can call the `file_search` tool during generation when it decides external knowledge is needed. **All** configured vector stores—including Solr—are available to the tool.
 
 ```mermaid
 graph TD
-    A[User Query] --> P{Always RAG enabled?}
+    A[User Query] --> P{Inline RAG enabled?}
     P -->|Yes| Q[Fetch Context]
-    Q --> R[BYOK Vector Stores / Solr OKP]
+    Q --> R[Vector Stores]
     R --> S[Inject Context into Prompt Context]
     S --> B[LLM]
     P -->|No| B
     B --> C{Need External Knowledge?}
     C -->|Yes| D[file_search Tool]
     C -->|No| E[Generate Response]
-    D --> F[BYOK Vector Stores]
+    D --> F[Vector Stores]
     F --> G[Retrieve Relevant Context]
     G --> B
     E --> H[Response to User]
 ```
 
 Both modes rely on:
-- **Vector Database**: Your indexed knowledge sources stored as vector embeddings
-- **Embedding Model**: Converts queries and documents into vector representations for similarity matching
+- **Vector stores**: Your indexed knowledge sources stored as vector embeddings (local or remote, e.g. Solr)
+- **Embedding model**: Converts queries and documents into vector representations for similarity matching
 
-Always RAG additionally supports:
-- **Score Multiplier**: Optional weight applied per BYOK vector store when mixing multiple sources. Allows custom prioritization of content. 
+Inline RAG additionally supports:
+- **Score multiplier**: Optional weight per vector store (in your vector store list) when mixing multiple sources for prioritization. 
 
 ---
 
@@ -285,34 +283,32 @@ registered_resources:
 >     score_multiplier: 1.0       # Optional: weight results when mixing multiple sources
 > ```
 >
-> When multiple BYOK sources are configured, `score_multiplier` adjusts the relative importance of
-> each store's results during Always RAG retrieval. Values above 1.0 boost a store; below 1.0 reduce it.
+> When multiple vector stores are configured, `score_multiplier` adjusts the relative importance of
+> each store's results during inline RAG retrieval. Values above 1.0 boost a store; below 1.0 reduce it.
 
 ### Step 5: Configure RAG Strategy
 
-Add a `rag` section to your `lightspeed-stack.yaml` to choose how BYOK knowledge is used:
+Add a `rag` section to your `lightspeed-stack.yaml`. Each mode is controlled **only by its list** of vector store IDs (no separate enabled flags):
 
 ```yaml
 rag:
-  # Always RAG: inject context before every LLM response (no tool calls needed)
-  always:
-    byok:
-      enabled: true   # fetch and inject BYOK vector store context pre-query
-    solr:
-      enabled: true   # fetch and inject Solr OKP context pre-query
-
-  # Tool RAG: the LLM can call file_search to retrieve context on demand
+  inline:
+    vector_store_ids: [vs_123, portal-rag]   # null/[] = off; ["*"] = all; [ids] = those
   tool:
-    byok:
-      enabled: true   # expose BYOK vector stores as the file_search tool
+    vector_store_ids: null   # null = all (default); [] = off; [ids] = those
+  vector_stores:
+    portal-rag:   # Solr vector store options
+      offline: false
 ```
 
-Both modes can be enabled simultaneously. Choose based on your latency and control preferences:
+- **inline.vector_store_ids**: null or [] = inline RAG off. Non-empty = on with those stores. Use `["*"]` to mean all available stores.
+- **tool.vector_store_ids**: null (default) = all stores. [] = tool RAG off. Non-empty = only those stores.
+- **vector_stores**: Optional per-vector-store options. Use the vector store ID (e.g. `portal-rag` for Solr) and set `offline` for document URL mode.
 
-| Mode | When context is fetched | Tool call needed | Supported sources | score_multiplier |
-|------|------------------------|------------------|-------------------|-----------------|
-| Always RAG | Before every query | No | BYOK + Solr | Yes (BYOK only) |
-| Tool RAG | On LLM demand | Yes | BYOK only | No |
+| Mode | When context is fetched | Tool call needed | Vector stores | score_multiplier |
+|------|------------------------|------------------|---------------|------------------|
+| Inline RAG | Before every query | No | rag.inline.vector_store_ids | Yes (per-store) |
+| Tool RAG | On LLM demand | Yes | rag.tool.vector_store_ids | No |
 
 ---
 

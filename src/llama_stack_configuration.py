@@ -493,7 +493,7 @@ def enrich_solr(ls_config: dict[str, Any], solr_config: dict[str, Any]) -> None:
 # =============================================================================
 
 
-def generate_configuration(
+def generate_configuration(  # pylint: disable=too-many-locals
     input_file: str,
     output_file: str,
     config: dict[str, Any],
@@ -518,8 +518,31 @@ def generate_configuration(
     # Enrichment: BYOK RAG
     enrich_byok_rag(ls_config, config.get("byok_rag", []))
 
-    # Enrichment: Solr
-    solr_config = config.get("rag", {}).get("always", {}).get("solr", {})
+    # Enrichment: Solr when it appears in inline or tool vector_store_ids
+    rag_config = config.get("rag", {})
+    inline_config = rag_config.get("inline", {})
+    tool_config = rag_config.get("tool", {})
+    inline_ids = inline_config.get("vector_store_ids")
+    tool_ids = tool_config.get("vector_store_ids")
+    # Inline on when list is non-empty (including ["*"]). Tool on when None or non-empty.
+    inline_has_stores = inline_ids and len(inline_ids) > 0
+    tool_has_stores = tool_ids is None or len(tool_ids) > 0
+    solr_in_inline = inline_has_stores and (
+        constants.SOLR_DEFAULT_VECTOR_STORE_ID in (inline_ids or [])
+        or "*" in (inline_ids or [])
+    )
+    solr_in_tool = tool_has_stores and (
+        tool_ids is None
+        or constants.SOLR_DEFAULT_VECTOR_STORE_ID in tool_ids
+        or "*" in tool_ids
+    )
+    use_solr = solr_in_inline or solr_in_tool
+    vector_stores = rag_config.get("vector_stores") or {}
+    solr_store = vector_stores.get(constants.SOLR_DEFAULT_VECTOR_STORE_ID) or {}
+    solr_config = {
+        "enabled": use_solr,
+        "offline": solr_store.get("offline", True),
+    }
     enrich_solr(ls_config, solr_config)
 
     logger.info("Writing Llama Stack configuration into file %s", output_file)

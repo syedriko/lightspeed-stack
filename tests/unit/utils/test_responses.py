@@ -40,7 +40,6 @@ from pydantic import AnyUrl
 from pytest_mock import MockerFixture
 
 import constants
-from configuration import AppConfig
 from models.config import ModelContextProtocolServer
 from models.requests import QueryRequest
 from utils.responses import (
@@ -363,6 +362,25 @@ class TestGetRAGTools:
         assert tools[0].type == "file_search"
         assert tools[0].vector_store_ids == ["db1", "db2"]
         assert tools[0].max_num_results == 10
+
+    def test_get_rag_tools_with_solr_params_and_solr_store(self) -> None:
+        """Test get_rag_tools sets filters when Solr store is included and solr_params given."""
+        solr_params = {"fq": ["product:*openshift*", "product_version:*4.16*"]}
+        tools = get_rag_tools(
+            [constants.SOLR_DEFAULT_VECTOR_STORE_ID, "byok-store"],
+            solr_params=solr_params,
+        )
+        assert tools is not None
+        assert len(tools) == 1
+        assert tools[0].type == "file_search"
+        assert tools[0].filters == solr_params
+
+    def test_get_rag_tools_with_solr_params_without_solr_store(self) -> None:
+        """Test get_rag_tools does not set filters when Solr store is not in list."""
+        tools = get_rag_tools(["db1", "db2"], solr_params={"fq": ["x:y"]})
+        assert tools is not None
+        assert len(tools) == 1
+        assert tools[0].filters is None
 
 
 class TestGetMCPTools:
@@ -2306,20 +2324,12 @@ class TestGetVectorStoreIds:
 class TestGetRAGToolsWithConfig:
     """Tests for get_rag_tools with configuration checks."""
 
-    def test_returns_none_when_tool_rag_disabled(self, mocker: MockerFixture) -> None:
-        """Test get_rag_tools returns None when Tool RAG is disabled in config."""
-        mock_config = mocker.Mock(spec=AppConfig)
-        mock_config.rag.tool.byok.enabled = False
-        mocker.patch("utils.responses.configuration", mock_config)
+    def test_returns_none_when_no_vector_stores(self) -> None:
+        """Test get_rag_tools returns None when vector_store_ids is empty."""
+        assert get_rag_tools([]) is None
 
-        assert get_rag_tools(["vs1", "vs2"]) is None
-
-    def test_returns_tools_when_enabled(self, mocker: MockerFixture) -> None:
-        """Test get_rag_tools returns tools when Tool RAG is enabled in config."""
-        mock_config = mocker.Mock(spec=AppConfig)
-        mock_config.rag.tool.byok.enabled = True
-        mocker.patch("utils.responses.configuration", mock_config)
-
+    def test_returns_tools_when_stores_provided(self) -> None:
+        """Test get_rag_tools returns tools when vector store IDs are provided."""
         tools = get_rag_tools(["vs1"])
         assert tools is not None
         assert tools[0].type == constants.DEFAULT_RAG_TOOL

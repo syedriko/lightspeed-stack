@@ -34,16 +34,11 @@ authentication:
 
 # RAG configuration
 rag:
-  # Always RAG (inject context pre-query with RAG from Solr and BYOK vector stores)
-  always:
-    solr:
-      enabled: false
-      offline: false
-    # Supports weighted scoring
-    byok:
-      enabled: false
-  # Tool RAG (LLM can call file_search tool during generation)
+  inline:
+    # vector_store_ids: null   # null or [] = off; ["*"] = all; [id1, id2] = those
   tool:
-    byok:
-      # Default is true for backward compatibility
-      enabled: false
+    # vector_store_ids: null   # null = all (default); [] = off; [id1, id2] = those
+  # Optional per-vector-store options (e.g. Solr document URL mode)
+  # vector_stores:
+  #   portal-rag:
+  #     offline: false

@@ -197,7 +197,7 @@ async def streaming_query_endpoint_handler(  # pylint: disable=too-many-locals
 
     client = AsyncLlamaStackClientHolder().get_client()
 
-    # Build RAG context from BYOK and Solr sources
+    # Build RAG context from all vector stores (inline RAG)
     rag_context = await build_rag_context(client, query_request, configuration)
 
     # Inject RAG context into query
@@ -287,7 +287,7 @@ async def retrieve_response_generator(
     Args:
         responses_params: The Responses API parameters
         context: The response generator context
-        pre_rag_documents: Referenced documents from pre-query RAG (BYOK + Solr)
+        pre_rag_documents: Referenced documents from pre-query (inline) RAG
 
     Returns:
         tuple[AsyncIterator[str], TurnSummary]: The response generator and turn summary

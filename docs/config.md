@@ -171,7 +171,7 @@ Global service configuration.
 | azure_entra_id |  |  |
 | splunk |  | Splunk HEC configuration for sending telemetry events. |
 | deployment_environment | string | Deployment environment name (e.g., 'development', 'staging', 'production'). Used in telemetry events. |
-| rag |  | RAG strategy configuration (Solr and BYOK). Controls pre-query (Always RAG) and tool-based (Tool RAG) retrieval. |
+| rag |  | RAG strategy configuration. Controls inline (pre-query) and tool-based retrieval. |
 
 
 ## ConversationHistoryConfiguration
@@ -525,68 +525,52 @@ the service can handle requests concurrently.
 
 Top-level RAG strategy configuration. Controls two complementary retrieval modes:
 
-- **Always RAG**: context is fetched from Solr and/or BYOK vector stores and injected
-  into every query before the LLM responds.
+- **Inline RAG**: context is fetched from all vector stores and injected into every
+  query before the LLM responds.
 - **Tool RAG**: the LLM can call the `file_search` tool during generation to retrieve
-  context on demand from BYOK vector stores.
+  context on demand from all vector stores (including Solr).
 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| always |  | Pre-query RAG from Solr and BYOK. See AlwaysRagConfiguration. |
+| inline |  | Pre-query (inline) RAG. See InlineRagConfiguration. |
 | tool |  | Tool-based RAG that the LLM can invoke. See ToolRagConfiguration. |
+| vector_stores |  | Optional per-vector-store options (e.g. portal-rag for Solr). See VectorStoreOptions. |
 
 
-## AlwaysRagConfiguration
+## InlineRagConfiguration
 
 
-Pre-query RAG configuration that injects context before the LLM generates a response.
-
-Both Solr and BYOK sources can be enabled independently. When enabled, retrieved
-chunks are added as context on every query.
-
-
-| Field | Type | Description |
-|-------|------|-------------|
-| solr |  | Solr RAG configuration for pre-query context injection. |
-| byok |  | BYOK RAG configuration for pre-query context injection. |
-
-
-## SolrRagConfiguration
-
-
-Solr configuration for Always RAG (pre-query context injection).
-
-Controls whether to use offline or online mode when building document URLs
-from vector search results, and enables/disables Solr vector IO functionality.
+Pre-query RAG configuration. Controlled only by the vector_store_ids list: null or
+empty = inline RAG off; non-empty = inline RAG on with those stores.
 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| enabled | boolean | When True, enables Solr vector IO functionality for vector search queries. When False, disables Solr vector search processing. |
-| offline | boolean | When True, use parent_id for chunk source URLs. When False, use reference_url for chunk source URLs. |
-
-
-## ByokRagConfiguration
-
-
-Configuration to enable or disable BYOK RAG retrieval.
-
-
-| Field | Type | Description |
-|-------|------|-------------|
-| enabled | boolean | When True, queries BYOK vector stores for RAG context. Default: False. |
+| vector_store_ids | list of string (optional) | Vector store IDs to query. null or [] = off. Non-empty = on with those stores. Use [\"*\"] for all. |
 
 
 ## ToolRagConfiguration
 
 
-Configuration for exposing RAG as a tool the LLM can call during generation.
+Which vector stores are exposed as the file_search tool. Controlled only by
+vector_store_ids: null = all (default); [] = off; non-empty = those stores.
 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| byok |  | BYOK RAG configuration for tool-based retrieval. Default: enabled. |
+| vector_store_ids | list of string (optional) | null (default) = all stores. [] = tool RAG off. Non-empty = only those stores. |
+
+
+## VectorStoreOptions
+
+
+Options for a single vector store (e.g. Solr / portal-rag). Keyed under rag.vector_stores by vector_store_id.
+
+
+| Field | Type | Description |
+|-------|------|-------------|
+| offline | boolean | When True, use parent_id for chunk source URLs. When False, use reference_url. Default: True. |
 
 
 ## SplunkConfiguration

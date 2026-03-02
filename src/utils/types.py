@@ -290,7 +290,7 @@ class RAGContext(BaseModel):
 
     Attributes:
         context_text: Formatted RAG context string for injection into the query.
-        rag_chunks: RAG chunks from pre-query sources (BYOK + Solr).
+        rag_chunks: RAG chunks from pre-query (inline) vector stores.
         referenced_documents: Referenced documents from pre-query sources.
     """
 

@@ -23,11 +23,6 @@ from utils.types import RAGChunk, RAGContext
 logger = get_logger(__name__)
 
 
-def _is_solr_enabled(configuration: AppConfig) -> bool:
-    """Check if Solr is enabled in configuration."""
-    return bool(configuration.rag.always.solr.enabled)
-
-
 def _get_solr_vector_store_ids() -> list[str]:
     """Get vector store IDs based on Solr configuration."""
     vector_store_ids = [constants.SOLR_DEFAULT_VECTOR_STORE_ID]
@@ -62,7 +57,7 @@ def _build_query_params(query_request: QueryRequest) -> dict:
 def _extract_byok_rag_chunks(
     search_response: Any, vector_store_id: str, weight: float
 ) -> list[dict[str, Any]]:
-    """Extract and weight result chunks from vector search for BYOK RAG.
+    """Extract and weight result chunks from vector search for inline RAG.
 
     Args:
         search_response: Response from vector_io.query
@@ -104,11 +99,10 @@ def _extract_byok_rag_chunks(
 def _format_rag_context(rag_chunks: list[RAGChunk], query: str) -> str:
     """Format RAG chunks for pre-query context injection.
 
-    This format is used for both BYOK RAG and Solr RAG chunks.
     Format is inspired by llama-stack file_search tool implementation.
 
     Args:
-        rag_chunks: List of RAG chunks from pre-query sources (BYOK + Solr)
+        rag_chunks: List of RAG chunks from pre-query (inline) vector stores
         query: The original search query
 
     Returns:
@@ -152,7 +146,7 @@ async def _query_store_for_byok_rag(
     query: str,
     weight: float,
 ) -> list[dict[str, Any]]:
-    """Query a single vector store for BYOK RAG.
+    """Query a single vector store for inline RAG.
 
     Args:
         client: AsyncLlamaStackClient for vector_io queries
@@ -209,14 +203,14 @@ def _extract_solr_document_metadata(
 def _process_byok_rag_chunks_for_documents(
     result_chunks: list[dict[str, Any]],
 ) -> list[ReferencedDocument]:
-    """Process BYOK RAG result chunks to extract referenced documents.
+    """Process inline RAG result chunks to extract referenced documents.
 
     Args:
-        result_chunks: Processed result dictionaries from BYOK RAG
+        result_chunks: Processed result dictionaries from inline RAG
                       (output of _extract_byok_rag_chunks)
 
     Returns:
-        List of referenced documents extracted from BYOK RAG chunks
+        List of referenced documents extracted from inline RAG chunks
     """
     referenced_documents = []
     seen_doc_ids = set()
@@ -256,7 +250,7 @@ def _process_byok_rag_chunks_for_documents(
             )
 
     logger.info(
-        "Extracted %d unique documents from BYOK RAG",
+        "Extracted %d unique documents from inline RAG",
         len(referenced_documents),
     )
     return referenced_documents
@@ -317,41 +311,32 @@ async def _fetch_byok_rag(
     client: AsyncLlamaStackClient,
     query: str,
     configuration: AppConfig,
-    vector_store_ids: Optional[list[str]] = None,
+    vector_store_ids: list[str],
 ) -> tuple[list[RAGChunk], list[ReferencedDocument]]:
-    """Fetch chunks and documents from BYOK RAG sources.
+    """Fetch chunks and documents from local vector stores (inline RAG).
 
     Args:
         client: The AsyncLlamaStackClient to use for the request
         query: The search query
         configuration: Application configuration
-        vector_store_ids: Optional list of vector store IDs to query.
-            If provided, only these stores will be queried. If None, all stores
-            (excluding Solr) will be queried.
+        vector_store_ids: List of (non-Solr) vector store IDs to query.
 
     Returns:
         Tuple containing:
-        - rag_chunks: RAG chunks from BYOK RAG
-        - referenced_documents: Documents referenced in BYOK RAG results
+        - rag_chunks: RAG chunks from local vector stores
+        - referenced_documents: Documents referenced in results
     """
     rag_chunks: list[RAGChunk] = []
     referenced_documents: list[ReferencedDocument] = []
 
-    if not configuration.rag.always.byok.enabled:
-        logger.info("Always RAG (BYOK) disabled, skipping BYOK RAG search")
+    if not vector_store_ids:
         return rag_chunks, referenced_documents
 
     try:
         # Get score multiplier and rag_id mappings
         score_multiplier_mapping = configuration.score_multiplier_mapping
         rag_id_mapping = configuration.rag_id_mapping
-
-        # Filter out Solr vector stores from available stores
-        vector_store_ids_to_query = [
-            vs_id
-            for vs_id in await get_vector_store_ids(client, vector_store_ids)
-            if vs_id != constants.SOLR_DEFAULT_VECTOR_STORE_ID
-        ]
+        vector_store_ids_to_query = vector_store_ids
 
         # Query all vector stores in parallel
         results_per_store = await asyncio.gather(
@@ -374,7 +359,9 @@ async def _fetch_byok_rag(
         top_results = all_results[: constants.BYOK_RAG_MAX_CHUNKS]
 
         # Resolve source, log, and convert to RAGChunk in a single pass
-        logger.info("Filtered top %d chunks from BYOK RAG", len(top_results))
+        logger.info(
+            "Filtered top %d chunks from inline RAG (vector stores)", len(top_results)
+        )
         for result in top_results:
             result["source"] = rag_id_mapping.get(result["source"], result["source"])
             logger.debug(
@@ -392,27 +379,29 @@ async def _fetch_byok_rag(
                 )
             )
 
-        # Extract referenced documents from BYOK RAG chunks (now with resolved sources)
+        # Extract referenced documents from inline RAG chunks (resolved sources)
         referenced_documents = _process_byok_rag_chunks_for_documents(top_results)
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning("Failed to perform BYOK RAG search: %s", e)
-        logger.debug("BYOK RAG error details: %s", traceback.format_exc())
+        logger.warning("Failed to perform inline RAG search: %s", e)
+        logger.debug("Inline RAG error details: %s", traceback.format_exc())
 
     return rag_chunks, referenced_documents
 
 
-async def _fetch_solr_rag(
+async def _fetch_solr_rag(  # pylint: disable=too-many-locals
     client: AsyncLlamaStackClient,
     query_request: QueryRequest,
     configuration: AppConfig,
+    include_solr: bool,
 ) -> tuple[list[RAGChunk], list[ReferencedDocument]]:
-    """Fetch chunks and documents from Solr RAG source.
+    """Fetch chunks and documents from Solr vector store (inline RAG).
 
     Args:
         client: The AsyncLlamaStackClient to use for the request
         query_request: The user's query request
         configuration: Application configuration
+        include_solr: When True, query the Solr vector store.
 
     Returns:
         Tuple containing:
@@ -422,12 +411,13 @@ async def _fetch_solr_rag(
     rag_chunks: list[RAGChunk] = []
     referenced_documents: list[ReferencedDocument] = []
 
-    if not _is_solr_enabled(configuration):
-        logger.info("Solr vector IO is disabled, skipping Solr search")
+    if not include_solr:
         return rag_chunks, referenced_documents
 
-    # Get offline setting from configuration
-    offline = configuration.rag.always.solr.offline
+    # Get offline setting from Solr vector store definition (document URL building)
+    vector_stores = configuration.rag.vector_stores or {}
+    store_options = vector_stores.get(constants.SOLR_DEFAULT_VECTOR_STORE_ID)
+    offline = store_options.offline if store_options else True
 
     try:
         vector_store_ids = _get_solr_vector_store_ids()
@@ -463,11 +453,11 @@ async def _fetch_solr_rag(
                 rag_chunks = _convert_solr_chunks_to_rag_format(
                     top_chunks, top_scores, offline
                 )
-                logger.info(
-                    "Filtered top %d chunks from Solr OKP RAG (%d were retrieved)",
-                    constants.SOLR_RAG_MAX_CHUNKS,
-                    len(rag_chunks),
-                )
+        logger.info(
+            "Filtered top %d chunks from Solr vector store (%d retrieved)",
+            constants.SOLR_RAG_MAX_CHUNKS,
+            len(rag_chunks),
+        )
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.warning("Failed to query Solr for chunks: %s", e)
@@ -476,14 +466,30 @@ async def _fetch_solr_rag(
     return rag_chunks, referenced_documents
 
 
-async def build_rag_context(
+def _resolve_inline_vector_store_ids(
+    configuration: AppConfig, all_store_ids: list[str]
+) -> list[str]:
+    r"""Resolve which vector store IDs to use for inline RAG.
+
+    None or empty list = inline RAG off. ["*"] = all stores. Otherwise = filter.
+    """
+    configured = configuration.rag.inline.vector_store_ids
+    if not configured:
+        return []
+    if len(configured) == 1 and configured[0] == "*":
+        return all_store_ids
+    return [vs_id for vs_id in configured if vs_id in all_store_ids]
+
+
+async def build_rag_context(  # pylint: disable=too-many-locals
     client: AsyncLlamaStackClient,
     query_request: QueryRequest,
     configuration: AppConfig,
 ) -> RAGContext:
-    """Build RAG context by fetching and merging chunks from all enabled sources.
+    """Build RAG context by fetching and merging chunks from enabled sources.
 
-    Enabled sources can be BYOK and/or Solr OKP.
+    Inline RAG queries the vector stores configured in rag.inline.vector_store_ids
+    (or all stores when that list is empty/None).
 
     Args:
         client: The AsyncLlamaStackClient to use for the request
@@ -493,17 +499,27 @@ async def build_rag_context(
     Returns:
         RAGContext containing formatted context text and referenced documents
     """
-    # Fetch from all enabled RAG sources in parallel
+    all_store_ids = await get_vector_store_ids(client, query_request.vector_store_ids)
+    inline_ids = _resolve_inline_vector_store_ids(configuration, all_store_ids)
+
+    # Split into non-Solr (local) and Solr
+    local_ids = [
+        vs_id for vs_id in inline_ids if vs_id != constants.SOLR_DEFAULT_VECTOR_STORE_ID
+    ]
+    include_solr = constants.SOLR_DEFAULT_VECTOR_STORE_ID in inline_ids
+
     byok_chunks_task = _fetch_byok_rag(
-        client, query_request.query, configuration, query_request.vector_store_ids
+        client, query_request.query, configuration, local_ids
     )
-    solr_chunks_task = _fetch_solr_rag(client, query_request, configuration)
+    solr_chunks_task = _fetch_solr_rag(
+        client, query_request, configuration, include_solr
+    )
 
     (byok_chunks, byok_docs), (solr_chunks, solr_docs) = await asyncio.gather(
         byok_chunks_task, solr_chunks_task
     )
 
-    # Merge chunks from all sources (BYOK + Solr)
+    # Merge chunks from all sources (vector stores)
     context_chunks = byok_chunks + solr_chunks
 
     context_text = _format_rag_context(context_chunks, query_request.query)
@@ -513,7 +529,7 @@ async def build_rag_context(
     logger.debug(context_text)
     logger.debug("=" * 80)
 
-    # Merge referenced documents from all sources (BYOK + Solr)
+    # Merge referenced documents from all sources
     top_documents = byok_docs + solr_docs
 
     return RAGContext(

@@ -32,6 +32,15 @@ MOCK_AUTH = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _patch_get_vector_store_ids(mocker: MockerFixture) -> None:
+    """Patch get_vector_store_ids so handler tests do not call Llama Stack."""
+    mocker.patch(
+        "utils.vector_search.get_vector_store_ids",
+        new=mocker.AsyncMock(return_value=[]),
+    )
+
+
 @pytest.fixture(name="dummy_request")
 def create_dummy_request() -> Request:
     """Create dummy request fixture for testing.

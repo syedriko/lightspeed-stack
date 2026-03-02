@@ -62,6 +62,15 @@ MOCK_AUTH_STREAMING = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _patch_get_vector_store_ids(mocker: MockerFixture) -> None:
+    """Patch get_vector_store_ids so handler tests do not call Llama Stack."""
+    mocker.patch(
+        "utils.vector_search.get_vector_store_ids",
+        new=mocker.AsyncMock(return_value=[]),
+    )
+
+
 @pytest.fixture(autouse=True, name="setup_configuration")
 def setup_configuration_fixture() -> AppConfig:
     """Set up configuration for tests."""

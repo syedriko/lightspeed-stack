@@ -50,16 +50,10 @@ byok_rag:
 
 # RAG configuration
 rag:
-  # Always RAG: context injected before every LLM response (no tool calls needed)
-  # Supports both Solr and BYOK sources. Score multipliers apply here only.
-  always:
-    solr:
-      enabled: false # Enable Solr OKP pre-query context injection
-      offline: false # Controls how document URLs are built from Solr results
-    byok:
-      enabled: false # Enable BYOK pre-query context injection (weighted by score_multiplier)
-  # Tool RAG: LLM calls file_search on demand to retrieve BYOK context
-  # Note: Solr is not available in Tool RAG; score_multiplier does not apply here
+  inline:
+    # vector_store_ids: [vs_123, vs_456, portal-rag]  # or ["*"] for all; null/[] = off
   tool:
-    byok:
-      enabled: true # Enable BYOK vector stores as the file_search tool (default: true)
+    # vector_store_ids: null   # null = all; [] = off; [ids] = those
+  vector_stores:
+    portal-rag:    # Solr vector store options
+      offline: false

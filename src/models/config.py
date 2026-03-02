@@ -1694,83 +1694,79 @@ class QuotaHandlersConfiguration(ConfigurationBase):
     )
 
 
-class ByokRagConfiguration(ConfigurationBase):
-    """BYOK RAG configuration."""
+class VectorStoreOptions(ConfigurationBase):
+    """Optional settings for a vector store (e.g. Solr).
 
-    enabled: bool = Field(
-        default=False,
-        title="BYOK RAG enabled",
-        description="When True, queries BYOK vector stores for RAG context.",
-    )
-
-
-class SolrRagConfiguration(ConfigurationBase):
-    """Solr RAG configuration."""
-
-    enabled: bool = Field(
-        default=False,
-        title="Solr RAG enabled",
-        description="When True, queries Solr OKP for RAG context.",
-    )
+    Used in rag.vector_stores keyed by vector_store_id.
+    """
 
     offline: bool = Field(
         default=True,
         title="Offline mode",
         description="When True, use parent_id for chunk source URLs. "
-        "When False, use reference_url for chunk source URLs.",
+        "When False, use reference_url for chunk source URLs. "
+        "Applies to stores that support it (e.g. Solr).",
     )
 
 
-class AlwaysRagConfiguration(ConfigurationBase):
-    """Always RAG configuration.
+class InlineRagConfiguration(ConfigurationBase):
+    """Inline RAG configuration.
 
-    Controls pre-query RAG from Solr and BYOK vector stores.
+    Pre-query RAG: context is fetched from the listed vector stores and
+    injected into every query before the LLM responds. When vector_store_ids
+    is None or empty, inline RAG is off. Use a non-empty list to enable it.
     """
 
-    solr: SolrRagConfiguration = Field(
-        default_factory=lambda: SolrRagConfiguration(),  # pylint: disable=unnecessary-lambda
-        title="Solr RAG configuration",
-        description="Configuration for Solr RAG (pre-query).",
-    )
-
-    byok: ByokRagConfiguration = Field(
-        default_factory=lambda: ByokRagConfiguration(),  # pylint: disable=unnecessary-lambda
-        title="BYOK RAG configuration",
-        description="Configuration for BYOK RAG (pre-query).",
+    vector_store_ids: Optional[list[str]] = Field(
+        default=None,
+        title="Vector store IDs",
+        description="List of vector store IDs to query for inline RAG. "
+        "None or empty = inline RAG off. Non-empty = inline RAG on with those stores. "
+        'Use ["*"] to mean all available stores.',
     )
 
 
 class ToolRagConfiguration(ConfigurationBase):
     """Tool RAG configuration.
 
-    Controls whether RAG functionality is exposed as a tool that the LLM can call.
+    Which vector stores are exposed as the file_search tool. None = all stores
+    (backward compatible). Empty list = tool RAG off. Non-empty = those stores.
     """
 
-    byok: ByokRagConfiguration = Field(
-        default_factory=lambda: ByokRagConfiguration(
-            enabled=True
-        ),  # defaults True for backward compatibility
-        title="BYOK RAG configuration",
-        description="Configuration for BYOK RAG as a tool.",
+    vector_store_ids: Optional[list[str]] = Field(
+        default=None,
+        title="Vector store IDs",
+        description="List of vector store IDs for the file_search tool. "
+        "None (default) = all available stores. [] = tool RAG off. "
+        "Non-empty = only those stores.",
     )
 
 
 class RagConfiguration(ConfigurationBase):
     """RAG strategy configuration.
 
-    Controls different RAG strategies: pre-query (always) and tool-based.
+    Controls two complementary modes: inline (pre-query) and tool-based RAG.
+    Optional per-vector-store options (e.g. offline for Solr) live under
+    vector_stores, keyed by vector_store_id.
     """
 
-    always: AlwaysRagConfiguration = Field(
-        default_factory=lambda: AlwaysRagConfiguration(),  # pylint: disable=unnecessary-lambda
-        title="Always RAG configuration",
-        description="Configuration for pre-query RAG from Solr and BYOK vector stores.",
+    inline: InlineRagConfiguration = Field(
+        default_factory=lambda: InlineRagConfiguration(),  # pylint: disable=unnecessary-lambda
+        title="Inline RAG configuration",
+        description="Pre-query RAG: inject context from listed vector stores.",
     )
 
     tool: ToolRagConfiguration = Field(
         default_factory=lambda: ToolRagConfiguration(),  # pylint: disable=unnecessary-lambda
         title="Tool RAG configuration",
-        description="Configuration for exposing RAG as a tool that the LLM can call.",
+        description="RAG as a tool the LLM can call during generation.",
+    )
+
+    vector_stores: Optional[dict[str, VectorStoreOptions]] = Field(
+        default=None,
+        title="Vector store options",
+        description="Optional settings per vector_store_id (e.g. portal-rag for Solr). "
+        "Used for store-specific options like offline (document URL mode).",
     )
 
 

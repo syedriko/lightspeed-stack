@@ -69,7 +69,7 @@ from llama_stack_client import APIConnectionError, APIStatusError, AsyncLlamaSta
 import constants
 import metrics
 from configuration import configuration
-from constants import DEFAULT_RAG_TOOL
+from constants import DEFAULT_RAG_TOOL, SOLR_DEFAULT_VECTOR_STORE_ID
 from log import get_logger
 from models.database.conversations import UserConversation
 from models.requests import QueryRequest
@@ -183,6 +183,7 @@ async def prepare_tools(  # pylint: disable=too-many-arguments,too-many-position
     token: str,
     mcp_headers: Optional[McpHeaders] = None,
     request_headers: Optional[Mapping[str, str]] = None,
+    solr_params: Optional[dict[str, Any]] = None,
 ) -> Optional[list[InputTool]]:
     """Prepare tools for Responses API including RAG and MCP tools.
 
@@ -194,6 +195,8 @@ async def prepare_tools(  # pylint: disable=too-many-arguments,too-many-position
         token: Authentication token for MCP tools
         mcp_headers: Per-request headers for MCP servers
         request_headers: Incoming HTTP request headers for allowlist propagation
+        solr_params: Optional Solr query parameters (e.g. filter queries) to apply
+            when the file_search tool includes the Solr vector store.
 
     Returns:
         List of tool configurations, or None if no tools available
@@ -202,11 +205,20 @@ async def prepare_tools(  # pylint: disable=too-many-arguments,too-many-position
         return None
 
     toolgroups: list[InputTool] = []
-    # Get vector stores for RAG tools - use specified ones or fetch all
-    vector_store_ids = await get_vector_store_ids(client, vector_store_ids)
+    # Resolve vector stores for RAG tools: config list or request/all
+    if configuration is not None:
+        tool_ids = configuration.rag.tool.vector_store_ids
+        if tool_ids is not None and len(tool_ids) == 0:
+            rag_vector_store_ids = []
+        elif tool_ids:
+            rag_vector_store_ids = tool_ids
+        else:
+            rag_vector_store_ids = await get_vector_store_ids(client, vector_store_ids)
+    else:
+        rag_vector_store_ids = await get_vector_store_ids(client, vector_store_ids)
 
     # Add RAG tools if vector stores are available
-    rag_tools = get_rag_tools(vector_store_ids)
+    rag_tools = get_rag_tools(rag_vector_store_ids, solr_params=solr_params)
     if rag_tools:
         toolgroups.extend(rag_tools)
 
@@ -304,6 +316,7 @@ async def prepare_responses_params(  # pylint: disable=too-many-arguments,too-ma
         token,
         mcp_headers,
         request_headers,
+        solr_params=query_request.solr,
     )
 
     # Prepare input for Responses API
@@ -371,26 +384,33 @@ def extract_vector_store_ids_from_tools(
     return vector_store_ids
 
 
-def get_rag_tools(vector_store_ids: list[str]) -> Optional[list[InputToolFileSearch]]:
+def get_rag_tools(
+    vector_store_ids: list[str],
+    solr_params: Optional[dict[str, Any]] = None,
+) -> Optional[list[InputToolFileSearch]]:
     """Convert vector store IDs to tools format for Responses API.
 
     Args:
         vector_store_ids: List of vector store identifiers
+        solr_params: Optional Solr query parameters (e.g. filter queries).
+            When the Solr vector store is in vector_store_ids, these are set
+            as the file_search tool's filters so the rag-runtime can pass
+            them to the Solr vector_io provider.
 
     Returns:
         List containing file_search tool configuration, or None if RAG as tool is disabled
     """
-    # Check if Tool RAG is enabled in configuration
-    if not (configuration and configuration.rag.tool.byok.enabled):
-        return None
-
     if not vector_store_ids:
         return None
 
+    use_solr_filters = (
+        solr_params is not None and SOLR_DEFAULT_VECTOR_STORE_ID in vector_store_ids
+    )
     return [
         InputToolFileSearch(
             vector_store_ids=vector_store_ids,
             max_num_results=constants.TOOL_RAG_MAX_CHUNKS,
+            filters=solr_params if use_solr_filters else None,
         )
     ]
 

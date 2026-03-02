@@ -174,11 +174,9 @@ CLUSTER_QUOTA_LIMITER = "cluster_limiter"
 DEFAULT_RAG_TOOL = "file_search"
 TOOL_RAG_MAX_CHUNKS = 10  # retrieved from RAG as a tool
 
-# BYOK RAG constants
-BYOK_RAG_MAX_CHUNKS = 10  # retrieved from BYOK RAG (Always RAG strategy)
-
-# Solr OKP constants
-SOLR_RAG_MAX_CHUNKS = 5  # retrieved from the Solr OKP RAG (Always RAG strategy)
+# Inline RAG: max chunks per source type
+BYOK_RAG_MAX_CHUNKS = 10  # max chunks from local vector stores (inline RAG)
+SOLR_RAG_MAX_CHUNKS = 5  # max chunks from Solr vector store (inline RAG)
 SOLR_VECTOR_SEARCH_DEFAULT_K = 5
 SOLR_VECTOR_SEARCH_DEFAULT_SCORE_THRESHOLD = 0.0
 SOLR_VECTOR_SEARCH_DEFAULT_MODE = "hybrid"
@@ -197,7 +195,7 @@ SOLR_DEFAULT_EMBEDDING_MODEL = (
 )
 SOLR_DEFAULT_EMBEDDING_DIMENSION = 384
 
-# Default score multiplier for BYOK RAG vector stores
+# Default score multiplier for vector stores (inline RAG prioritization)
 DEFAULT_SCORE_MULTIPLIER = 1.0
 
 # Logging configuration constants
