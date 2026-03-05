@@ -69,6 +69,8 @@ dependencies = [
     "pyasn1>=0.6.2",
     # Used for system prompt template variable rendering
     "jinja2>=3.1.0",
+    # Used for RAG chunk reranking (cross-encoder)
+    "sentence-transformers>=2.0.0",
 ]
 
 
