@@ -21,18 +21,10 @@ WORKDIR /app-root
 
 USER root
 
-# Install gcc - required by polyleven python package on aarch64
-# (dependency of autoevals, no pre-built binary wheels for linux on aarch64)
-# cmake and cargo are required by fastuuid, maturin
-RUN ${BUILDER_DNF_COMMAND} install -y --nodocs --setopt=keepcache=0 --setopt=tsflags=nodocs gcc gcc-c++ cmake cargo
-
-# Install uv package manager
-RUN pip3.12 install "uv>=0.8.15"
-
 # Add explicit files and directories
 # (avoid accidental inclusion of local directories or env files or credentials)
 COPY ${LSC_SOURCE_DIR}/src ./src
-COPY ${LSC_SOURCE_DIR}/pyproject.toml ${LSC_SOURCE_DIR}/LICENSE ${LSC_SOURCE_DIR}/README.md ${LSC_SOURCE_DIR}/uv.lock ${LSC_SOURCE_DIR}/requirements.*.txt ./
+COPY ${LSC_SOURCE_DIR}/pyproject.toml ${LSC_SOURCE_DIR}/LICENSE ${LSC_SOURCE_DIR}/README.md ${LSC_SOURCE_DIR}/uv.lock ${LSC_SOURCE_DIR}/.konflux/requirements.*.txt ./
 
 # lightspeed-providers:
 # Fully hermetic — uses prefetched artifact or pinned commit from GitHub
@@ -70,7 +62,7 @@ RUN if [ -f /cachi2/cachi2.env ]; then \
     . /cachi2/cachi2.env && \
     uv venv --seed --no-index --find-links ${PIP_FIND_LINKS} && \
     . .venv/bin/activate && \
-    pip install --no-cache-dir --ignore-installed --no-index --find-links ${PIP_FIND_LINKS} --no-deps -r requirements.hashes.wheel.txt -r requirements.hashes.source.txt && \
+    pip install --no-cache-dir --ignore-installed --no-index --find-links ${PIP_FIND_LINKS} --no-deps -r requirements.hashes.txt && \
     pip check; \
     else \
     uv sync --locked --no-dev --group llslibdev; \
@@ -112,9 +104,6 @@ COPY --from=builder /app-root/LICENSE /licenses/
 
 USER root
 
-# Additional tools for derived images
-RUN ${RUNTIME_DNF_COMMAND} install -y --nodocs --setopt=keepcache=0 --setopt=tsflags=nodocs jq patch
-
 # Create llama-stack directories for library mode
 RUN mkdir -p /opt/app-root/src/.llama/storage /opt/app-root/src/.llama/providers.d && \
     chown -R 1001:1001 /opt/app-root/src/.llama
@@ -137,7 +126,7 @@ ENTRYPOINT ["python3.12", "src/lightspeed_stack.py"]
 LABEL vendor="Red Hat, Inc." \
     name="lightspeed-core/lightspeed-stack-rhel9" \
     com.redhat.component="lightspeed-core/lightspeed-stack" \
-    cpe="cpe:/a:redhat:lightspeed_core:0.4::el9" \
+    cpe="cpe:/a:redhat:lightspeed_core:0.5::el9" \
     io.k8s.display-name="Lightspeed Stack" \
     summary="A service that provides a REST API for the Lightspeed Core Stack." \
     description="Lightspeed Core Stack (LCS) is an AI-powered assistant that provides answers to product questions using backend LLM services, agents, and RAG databases." \

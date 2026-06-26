@@ -118,8 +118,18 @@ distribution-archives:	## Generate distribution archives to be uploaded into Pyt
 upload-distribution-archives:	## Upload distribution archives into Python registry
 	uv run python -m twine upload --repository ${PYTHON_REGISTRY} dist/*
 
-konflux-requirements:	## Generate hermetic requirements.*.txt file for konflux build
-	./scripts/konflux_requirements.sh
+RHOAI_INDEX_URL ?= https://packages.redhat.com/api/pypi/public-rhai/rhoai/3.4/cpu-ubi9/simple/
+
+konflux-requirements:	## Generate hermetic requirements.hashes.txt from RHOAI index
+	uv pip compile pyproject.toml \
+		--index-url $(RHOAI_INDEX_URL) \
+		--python-version 3.12 \
+		--generate-hashes \
+		--universal \
+		--no-sources \
+		--group llslibdev \
+		--refresh \
+		-o .konflux/requirements.hashes.txt
 
 konflux-rpm-lock:	## Generate rpm.lock.yaml file for konflux build
 	./scripts/generate-rpm-lock.sh
