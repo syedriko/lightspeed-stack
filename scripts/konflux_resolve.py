@@ -1027,6 +1027,8 @@ def uv_resolve(
         rhoai_index_url,
         "--default-index",
         "https://pypi.org/simple/",
+        "--index-strategy",
+        "prefer-index",
         "--emit-index-annotation",
         "--no-sources",
         "--group",
