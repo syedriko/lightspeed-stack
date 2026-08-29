@@ -74,8 +74,6 @@ async def rags_endpoint_handler(
     - HTTPException: with status 403 if permission is denied.
     - HTTPException: with status 500 and a detail object containing `response`
       and `cause` when service configuration is wrong or incomplete.
-    - HTTPException: with status 503 and a detail object containing `response`
-      and `cause` when unable to connect to OGX.
 
     ### Returns:
     - RAGListResponse: List of RAG identifiers.
@@ -90,13 +88,20 @@ async def rags_endpoint_handler(
         # make sure that the configuration is loaded
         check_configuration_loaded(configuration)
 
+        # Collect locally-served FAISS store rag_ids directly from config
+        local_faiss_rag_ids = [
+            store.rag_id
+            for store in configuration.configuration.rag.byok.stores
+            if store.backend == "faiss" and store.db_path
+        ]
+
         ogx_configuration = configuration.ogx_configuration
         logger.info("OGX config: %s", ogx_configuration)
 
         try:
             # try to get OGX client
             client = AsyncOgxClientHolder().get_client()
-            # retrieve list of RAGs
+            # retrieve list of RAGs from OGX (pgvector + dynamic stores)
             rags = await client.vector_stores.list()
             logger.info("List of rags: %d", len(rags))
 
@@ -106,15 +111,18 @@ async def rags_endpoint_handler(
                 configuration.resolve_index_name(rag.id, rag_id_mapping) for rag in rags
             ]
 
-            span.set_attribute("rags.count", len(rag_ids))
-            return RAGListResponse(rags=rag_ids)
+            # Merge local FAISS stores (avoid duplicates)
+            all_rag_ids = list(dict.fromkeys(local_faiss_rag_ids + rag_ids))
+
+            span.set_attribute("rags.count", len(all_rag_ids))
+            return RAGListResponse(rags=all_rag_ids)
 
         # connection to OGX server
         except ApiException as e:
             if not e.status:
                 logger.error("Unable to connect to OGX: %s", e)
-                response = ServiceUnavailableResponse(backend_name="OGX")
-                raise HTTPException(**response.model_dump()) from e
+                span.set_attribute("rags.count", len(local_faiss_rag_ids))
+                return RAGListResponse(rags=local_faiss_rag_ids)
             raise
 
 
@@ -138,6 +146,14 @@ def _resolve_rag_id_to_vector_db_id(rag_id: str, byok_rags: list[RagStore]) -> s
         if brag.rag_id == rag_id:
             return brag.vector_db_id
     return rag_id
+
+
+def _find_local_faiss_store(rag_id: str) -> RagStore | None:
+    """Return the RagStore if rag_id maps to a locally-served FAISS store."""
+    for store in configuration.configuration.rag.byok.stores:
+        if store.rag_id == rag_id and store.backend == "faiss" and store.db_path:
+            return store
+    return None
 
 
 @router.get("/rags/{rag_id}", responses=rag_responses)
@@ -179,6 +195,21 @@ async def get_rag_endpoint_handler(
 
     with tracer.start_as_current_span("rags.get") as span:
         check_configuration_loaded(configuration)
+
+        # Check if this is a locally-served FAISS store
+        local_store = _find_local_faiss_store(rag_id)
+        if local_store is not None:
+            span.set_attribute("rags.found", True)
+            return RAGInfoResponse(
+                id=local_store.rag_id,
+                name=local_store.rag_id,
+                created_at=0,
+                last_active_at=0,
+                expires_at=None,
+                object="vector_store",
+                status="completed",
+                usage_bytes=0,
+            )
 
         ogx_configuration = configuration.ogx_configuration
         logger.info("OGX config: %s", ogx_configuration)
