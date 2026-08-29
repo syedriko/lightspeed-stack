@@ -20,6 +20,7 @@ from constants import DEFAULT_RAG_TOOL
 from models.common.agents import AgentTurnAccumulator
 from models.common.turn_summary import TurnSummary
 from utils.agents.tool_processor import (
+    _extract_knowledge_search_results,
     build_referenced_document,
     process_function_tool_call,
     process_function_tool_result,
@@ -694,3 +695,153 @@ class TestProcessNativeToolResult:
         )
         process_native_tool_result(turn_state, known)
         assert process_native_tool_result(turn_state, known) is None
+
+
+class TestExtractKnowledgeSearchResults:
+    """Tests for _extract_knowledge_search_results."""
+
+    def test_extracts_rag_chunks(self) -> None:
+        """Parses knowledge_search JSON into RAGChunk objects."""
+        results_json = json.dumps(
+            [
+                {
+                    "content": "Hello world",
+                    "score": 0.85,
+                    "source": "my-kb",
+                    "metadata": {"title": "Doc1", "document_id": "d1"},
+                },
+                {
+                    "content": "Second chunk",
+                    "score": 0.7,
+                    "source": "my-kb",
+                    "metadata": {
+                        "title": "Doc2",
+                        "reference_url": "https://example.com",
+                    },
+                },
+            ]
+        )
+        part = ToolReturnPart(
+            tool_name="knowledge_search",
+            tool_call_id="ks-1",
+            content=results_json,
+        )
+
+        rag_chunks, docs = _extract_knowledge_search_results(part)
+
+        assert len(rag_chunks) == 2
+        assert rag_chunks[0].content == "Hello world"
+        assert rag_chunks[0].score == 0.85
+        assert rag_chunks[0].source == "my-kb"
+        assert rag_chunks[1].content == "Second chunk"
+
+    def test_extracts_referenced_documents(self) -> None:
+        """Parses referenced documents from metadata."""
+        results_json = json.dumps(
+            [
+                {
+                    "content": "chunk",
+                    "score": 0.9,
+                    "source": "kb",
+                    "metadata": {
+                        "title": "My Doc",
+                        "reference_url": "https://docs.example.com/page",
+                        "document_id": "doc-123",
+                    },
+                },
+            ]
+        )
+        part = ToolReturnPart(
+            tool_name="knowledge_search",
+            tool_call_id="ks-2",
+            content=results_json,
+        )
+
+        _chunks, docs = _extract_knowledge_search_results(part)
+
+        assert len(docs) == 1
+        assert docs[0].doc_title == "My Doc"
+        assert str(docs[0].doc_url) == "https://docs.example.com/page"
+        assert docs[0].document_id == "doc-123"
+
+    def test_deduplicates_documents(self) -> None:
+        """Documents with same URL are deduplicated."""
+        results_json = json.dumps(
+            [
+                {
+                    "content": "chunk1",
+                    "score": 0.9,
+                    "source": "kb",
+                    "metadata": {"reference_url": "https://same.url"},
+                },
+                {
+                    "content": "chunk2",
+                    "score": 0.8,
+                    "source": "kb",
+                    "metadata": {"reference_url": "https://same.url"},
+                },
+            ]
+        )
+        part = ToolReturnPart(
+            tool_name="knowledge_search",
+            tool_call_id="ks-3",
+            content=results_json,
+        )
+
+        _chunks, docs = _extract_knowledge_search_results(part)
+
+        assert len(docs) == 1
+
+    def test_handles_invalid_json(self) -> None:
+        """Invalid JSON gracefully returns empty results."""
+        part = ToolReturnPart(
+            tool_name="knowledge_search",
+            tool_call_id="ks-4",
+            content="not valid json",
+        )
+
+        rag_chunks, docs = _extract_knowledge_search_results(part)
+
+        assert rag_chunks == []
+        assert docs == []
+
+    def test_process_function_tool_result_extracts_rag_chunks(
+        self, turn_state: AgentTurnAccumulator
+    ) -> None:
+        """process_function_tool_result populates rag_chunks for knowledge_search."""
+        results_json = json.dumps(
+            [
+                {
+                    "content": "knowledge",
+                    "score": 0.9,
+                    "source": "kb",
+                    "metadata": {"title": "T"},
+                },
+            ]
+        )
+        part = ToolReturnPart(
+            tool_name="knowledge_search",
+            tool_call_id="ks-int-1",
+            content=results_json,
+        )
+
+        result = process_function_tool_result(turn_state, part)
+
+        assert result is not None
+        assert result.type == "function_call_output"
+        assert len(turn_state.turn_summary.rag_chunks) == 1
+        assert turn_state.turn_summary.rag_chunks[0].content == "knowledge"
+
+    def test_process_function_tool_result_ignores_other_tools(
+        self, turn_state: AgentTurnAccumulator
+    ) -> None:
+        """process_function_tool_result does not extract rag_chunks for other tools."""
+        part = ToolReturnPart(
+            tool_name="some_other_tool",
+            tool_call_id="other-1",
+            content="some result",
+        )
+
+        process_function_tool_result(turn_state, part)
+
+        assert len(turn_state.turn_summary.rag_chunks) == 0

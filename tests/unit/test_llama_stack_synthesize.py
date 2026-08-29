@@ -1200,7 +1200,11 @@ def test_main_unified_config_resolves_relative_profile(
 def test_main_legacy_config_enriches_input_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A legacy config (no synthesis input) enriches the --input run.yaml."""
+    """A legacy config (no synthesis input) enriches the --input run.yaml.
+
+    Local faiss stores (backend=faiss + db_path) are skipped during enrichment,
+    so we use a pgvector store to verify the enrichment path still works.
+    """
     run_yaml = {"version": 2, "apis": ["inference"]}
     run_path = tmp_path / "run.yaml"
     run_path.write_text(yaml.dump(run_yaml), encoding="utf-8")
@@ -1212,9 +1216,14 @@ def test_main_legacy_config_enriches_input_file(
                     {
                         "rag_id": "kb1",
                         "vector_db_id": "kb1",
-                        "db_path": "/var/lib/kb1/faiss.db",
+                        "backend": "pgvector",
                         "embedding_model": "nomic-ai/nomic-embed-text-v1.5",
                         "embedding_dimension": 768,
+                        "host": "localhost",
+                        "port": "5432",
+                        "db": "kb1_db",
+                        "user": "admin",
+                        "password": "secret",
                     }
                 ]
             }

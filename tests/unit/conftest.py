@@ -203,6 +203,8 @@ def make_agent_config_fixture(
         config = mocker.Mock()
         config.skills = skills
         config.shields = shields or []
+        config.rag.retrieval.tool.sources = []
+        config.rag.byok.stores = []
         return config
 
     return _make

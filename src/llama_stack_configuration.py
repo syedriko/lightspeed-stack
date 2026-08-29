@@ -497,41 +497,55 @@ def construct_vector_io_providers_section(
 def enrich_byok_rag(ls_config: dict[str, Any], byok_rag: list[dict[str, Any]]) -> None:
     """Enrich OGX config with BYOK RAG settings.
 
+    Stores with ``backend: faiss`` and a ``db_path`` are served locally
+    (sqlite-faiss) and are excluded from the OGX enrichment. Only pgvector
+    (and future OGX-managed backends) get injected.
+
     Args:
         ls_config: OGX configuration dict (modified in place)
         byok_rag: List of BYOK RAG configurations
     """
-    if len(byok_rag) == 0:
-        logger.info("BYOK RAG is not configured: skipping")
+    # Filter out locally-served FAISS stores
+    ogx_byok_rag = [
+        brag
+        for brag in byok_rag
+        if not (
+            brag.get("backend", constants.DEFAULT_RAG_BACKEND) == "faiss"
+            and brag.get("db_path")
+        )
+    ]
+
+    if len(ogx_byok_rag) == 0:
+        logger.info("No OGX-managed BYOK RAG stores: skipping enrichment")
         dedupe_providers_vector_io(ls_config)
         return
 
-    logger.info("Enriching OGX config with BYOK RAG")
+    logger.info("Enriching OGX config with %d BYOK RAG store(s)", len(ogx_byok_rag))
 
     # Add storage backends
     if "storage" not in ls_config:
         ls_config["storage"] = {}
     ls_config["storage"]["backends"] = construct_storage_backends_section(
-        ls_config, byok_rag
+        ls_config, ogx_byok_rag
     )
 
     # Add vector_io providers
     if "providers" not in ls_config:
         ls_config["providers"] = {}
     ls_config["providers"]["vector_io"] = construct_vector_io_providers_section(
-        ls_config, byok_rag
+        ls_config, ogx_byok_rag
     )
 
     # Add registered vector stores
     if "registered_resources" not in ls_config:
         ls_config["registered_resources"] = {}
     ls_config["registered_resources"]["vector_stores"] = (
-        construct_vector_stores_section(ls_config, byok_rag)
+        construct_vector_stores_section(ls_config, ogx_byok_rag)
     )
 
     # Add embedding models
     ls_config["registered_resources"]["models"] = construct_models_section(
-        ls_config, byok_rag
+        ls_config, ogx_byok_rag
     )
 
 

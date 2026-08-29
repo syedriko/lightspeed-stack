@@ -74,6 +74,7 @@ from utils.query import normalize_vertex_ai_model_id
 from utils.responses import (
     _build_chunk_attributes,
     _build_okp_doc_url,
+    _is_local_faiss_store,
     _merge_tools,
     build_mcp_tool_call_from_arguments_done,
     build_tool_call_summary,
@@ -1777,6 +1778,44 @@ class TestResolveVectorStoreIds:
         ]
         result = resolve_vector_store_ids(["a_rag", "b_rag"], byok_rags)
         assert result == ["vs-a", "vs-b"]
+
+
+class TestIsLocalFaissStore:
+    """Tests for _is_local_faiss_store helper."""
+
+    @staticmethod
+    def _make_store(
+        vector_db_id: str, backend: str = "faiss", db_path: str | None = "/data/s.db"
+    ) -> RagStore:
+        return RagStore(
+            rag_id="r",
+            vector_db_id=vector_db_id,
+            backend=backend,
+            db_path=db_path,
+            embedding_model="model",
+            embedding_dimension=768,
+            score_multiplier=1.0,
+        )
+
+    def test_returns_true_for_local_faiss(self) -> None:
+        """Matches a FAISS store with db_path set."""
+        stores = [self._make_store("vs-1")]
+        assert _is_local_faiss_store("vs-1", stores) is True
+
+    def test_returns_false_for_pgvector(self) -> None:
+        """Does not match a pgvector store."""
+        stores = [self._make_store("vs-1", backend="pgvector", db_path=None)]
+        assert _is_local_faiss_store("vs-1", stores) is False
+
+    def test_returns_false_for_faiss_without_db_path(self) -> None:
+        """Does not match when db_path is absent."""
+        stores = [self._make_store("vs-1", backend="pgvector", db_path=None)]
+        assert _is_local_faiss_store("vs-1", stores) is False
+
+    def test_returns_false_for_unknown_id(self) -> None:
+        """Does not match when vector_db_id is not in stores."""
+        stores = [self._make_store("vs-1")]
+        assert _is_local_faiss_store("vs-unknown", stores) is False
 
 
 class TestPrepareToolsTranslatesVectorStoreIds:

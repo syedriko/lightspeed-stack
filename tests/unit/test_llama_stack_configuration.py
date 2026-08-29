@@ -731,7 +731,7 @@ def test_generate_configuration_with_pydantic_model(tmp_path: Path) -> None:
 
 
 def test_generate_configuration_with_byok(tmp_path: Path) -> None:
-    """Test generate_configuration adds BYOK entries."""
+    """Test generate_configuration skips local faiss stores from OGX enrichment."""
     config = {
         "rag": {
             "byok": {
@@ -755,22 +755,14 @@ def test_generate_configuration_with_byok(tmp_path: Path) -> None:
     with open(outfile, encoding="utf-8") as f:
         result = yaml.safe_load(f)
 
-    # Check registered_resources.vector_stores
-    store_ids = [
-        s["vector_store_id"] for s in result["registered_resources"]["vector_stores"]
-    ]
-    assert "store1" in store_ids
+    # Local faiss stores are NOT injected into OGX
+    vector_stores = result.get("registered_resources", {}).get("vector_stores", [])
+    store_ids = [s["vector_store_id"] for s in vector_stores]
+    assert "store1" not in store_ids
 
-    # Check storage.backends - named after rag_id
-    assert "byok_rag1_storage" in result["storage"]["backends"]
-
-    # Check providers.vector_io - named after rag_id
-    provider_ids = [p["provider_id"] for p in result["providers"]["vector_io"]]
-    assert "byok_rag1" in provider_ids
-
-    # Check registered_resources.models for embedding model - named after rag_id
-    model_ids = [m["model_id"] for m in result["registered_resources"]["models"]]
-    assert "byok_rag1_embedding" in model_ids
+    # No byok storage backend added for local faiss stores
+    backends = result.get("storage", {}).get("backends", {})
+    assert "byok_rag1_storage" not in backends
 
 
 def test_generate_configuration_with_pgvector(tmp_path: Path) -> None:

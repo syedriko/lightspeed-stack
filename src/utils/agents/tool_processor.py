@@ -29,6 +29,9 @@ from models.common.turn_summary import (
     ToolInfoSummary,
     ToolResultSummary,
 )
+from pydantic_ai_lightspeed.capabilities.sqlite_faiss_search import (
+    KNOWLEDGE_SEARCH_TOOL_NAME,
+)
 from utils.responses import _build_okp_doc_url, resolve_source_for_result
 
 logger = get_logger(__name__)
@@ -213,6 +216,12 @@ def process_function_tool_result(
     state.emitted_tool_result_ids.add(tool_result.id)
     state.turn_summary.tool_results.append(tool_result)
     state.round_increment_pending = True
+
+    if part.tool_name == KNOWLEDGE_SEARCH_TOOL_NAME:
+        rag_chunks, docs = _extract_knowledge_search_results(part)
+        state.turn_summary.rag_chunks.extend(rag_chunks)
+        state.turn_summary.referenced_documents.extend(docs)
+
     return tool_result
 
 
@@ -236,6 +245,49 @@ def summarize_function_tool_result(
         type="function_call_output",
         round=tool_round,
     )
+
+
+def _extract_knowledge_search_results(
+    part: ToolReturnPart,
+) -> tuple[list[RAGChunk], list[ReferencedDocument]]:
+    """Parse RAG chunks and documents from a knowledge_search tool return."""
+    rag_chunks: list[RAGChunk] = []
+    documents: list[ReferencedDocument] = []
+    try:
+        results = json.loads(part.model_response_str())
+    except (json.JSONDecodeError, TypeError):
+        return rag_chunks, documents
+
+    seen_docs: set[str] = set()
+    for result in results:
+        metadata = result.get("metadata") or {}
+        rag_chunks.append(
+            RAGChunk(
+                content=result.get("content", ""),
+                source=result.get("source", ""),
+                score=result.get("score", 0.0),
+                attributes=metadata or None,
+            )
+        )
+        doc_url = (
+            metadata.get("reference_url")
+            or metadata.get("doc_url")
+            or metadata.get("docs_url")
+        )
+        doc_title = metadata.get("title")
+        doc_id = metadata.get("document_id") or metadata.get("doc_id")
+        dedup_key = doc_url or doc_id or ""
+        if dedup_key and dedup_key not in seen_docs:
+            seen_docs.add(dedup_key)
+            documents.append(
+                ReferencedDocument(
+                    doc_url=AnyUrl(doc_url) if doc_url else None,
+                    doc_title=doc_title,
+                    document_id=doc_id,
+                    source=result.get("source", ""),
+                )
+            )
+    return rag_chunks, documents
 
 
 def referenced_documents_from_file_search_results(

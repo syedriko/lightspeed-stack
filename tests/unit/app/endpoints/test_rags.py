@@ -45,7 +45,10 @@ async def test_rags_endpoint_configuration_not_loaded(
 async def test_rags_endpoint_connection_error(
     mocker: MockerFixture, minimal_config: AppConfig
 ) -> None:
-    """Test that /rags endpoint raises HTTP 503 if OGX connection fails."""
+    """Test that /rags endpoint degrades gracefully when OGX connection fails.
+
+    Local FAISS stores are still returned; OGX stores are empty.
+    """
     mocker.patch("app.endpoints.rags.configuration", minimal_config)
     mock_client = mocker.AsyncMock()
     mock_client.vector_stores.list.side_effect = APIConnectionError(request=None)  # type: ignore
@@ -58,13 +61,9 @@ async def test_rags_endpoint_connection_error(
     # Authorization tuple required by URL endpoint handler
     auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
 
-    with pytest.raises(HTTPException) as e:
-        await rags_endpoint_handler(request=request, auth=auth)
-    assert e.value.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-    detail = e.value.detail
-    assert isinstance(detail, dict)
-    assert "response" in detail
-    assert "Unable to connect to OGX" in detail["response"]  # type: ignore[index]
+    response = await rags_endpoint_handler(request=request, auth=auth)
+    # No local FAISS stores in minimal_config, so empty list
+    assert response.rags == []
 
 
 @pytest.mark.asyncio
@@ -345,27 +344,11 @@ async def test_rags_endpoint_returns_rag_ids_from_config(
 async def test_rag_info_endpoint_accepts_rag_id_from_config(
     mocker: MockerFixture, tmp_path: Path
 ) -> None:
-    """Test that /rags/{rag_id} accepts a user-facing rag_id and resolves it."""
+    """Test that /rags/{rag_id} returns local FAISS store info without calling OGX."""
     byok_config = _make_byok_config(str(tmp_path))
     mocker.patch("app.endpoints.rags.configuration", byok_config)
 
-    # pylint: disable=R0902,R0903
-    class RagInfo:
-        """RagInfo mock."""
-
-        def __init__(self) -> None:
-            """Initialize with test data."""
-            self.id = "vs_abc123"
-            self.name = "OCP 4.18 Docs"
-            self.created_at = 100
-            self.last_active_at = 200
-            self.expires_at = 300
-            self.object = "vector_store"
-            self.status = "completed"
-            self.usage_bytes = 500
-
     mock_client = mocker.AsyncMock()
-    mock_client.vector_stores.retrieve.return_value = RagInfo()
     mocker.patch(
         "app.endpoints.rags.AsyncOgxClientHolder"
     ).return_value.get_client.return_value = mock_client
@@ -373,15 +356,16 @@ async def test_rag_info_endpoint_accepts_rag_id_from_config(
     request = Request(scope={"type": "http"})
     auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
 
-    # Pass the user-facing rag_id, not the vector_store_id
+    # Pass the user-facing rag_id — should be answered locally
     response = await get_rag_endpoint_handler(
         request=request, auth=auth, rag_id="ocp-4.18-docs"
     )
 
-    # The endpoint should resolve ocp-4.18-docs -> vs_abc123 for the lookup
-    mock_client.vector_stores.retrieve.assert_called_once_with("vs_abc123")
+    # OGX should NOT have been called
+    mock_client.vector_stores.retrieve.assert_not_called()
     # The response should show the user-facing ID
     assert response.id == "ocp-4.18-docs"
+    assert response.status == "completed"
 
 
 def test_resolve_rag_id_to_vector_db_id_with_mapping(tmp_path: Path) -> None:
@@ -448,13 +432,13 @@ class TestRagsEndpointOtel:
         assert span.attributes["rags.count"] == 2
 
     @pytest.mark.asyncio
-    async def test_list_span_records_error_on_connection_failure(
+    async def test_list_span_records_graceful_on_connection_failure(
         self,
         mocker: MockerFixture,
         minimal_config: AppConfig,
         otel: tuple[Any, InMemorySpanExporter],
     ) -> None:
-        """Test that the list span records an error on connection failure."""
+        """Test that the list span completes when OGX connection fails (graceful degradation)."""
         tracer, exporter = otel
         mocker.patch("app.endpoints.rags.tracer", tracer)
         mocker.patch("app.endpoints.rags.configuration", minimal_config)
@@ -470,13 +454,12 @@ class TestRagsEndpointOtel:
         request = Request(scope={"type": "http"})
         auth: AuthTuple = ("uid", "uname", True, "tok")
 
-        with pytest.raises(HTTPException):
-            await rags_endpoint_handler(request=request, auth=auth)
+        response = await rags_endpoint_handler(request=request, auth=auth)
+        assert response.rags == []
 
         spans = exporter.get_finished_spans()
         assert len(spans) == 1
         assert spans[0].name == "rags.list"
-        assert spans[0].status.status_code == StatusCode.ERROR
 
     @pytest.mark.asyncio
     async def test_get_emits_span_with_found(

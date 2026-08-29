@@ -615,6 +615,7 @@ class TestFetchByokRag:
         """Test when no inline BYOK sources are configured."""
         config_mock = mocker.Mock(spec=AppConfig)
         config_mock.rag.retrieval.inline.sources = []
+        config_mock.rag.retrieval.tool.sources = []
         config_mock.rag.byok.stores = []
         mocker.patch("utils.vector_search.configuration", config_mock)
 
@@ -634,6 +635,7 @@ class TestFetchByokRag:
         byok_rag_mock.rag_id = "rag_1"
         byok_rag_mock.vector_db_id = "vs_1"
         config_mock.rag.retrieval.inline.sources = ["rag_1"]
+        config_mock.rag.retrieval.tool.sources = []
         config_mock.rag.byok.stores = [byok_rag_mock]
         config_mock.rag.byok.max_chunks = constants.DEFAULT_BYOK_RAG_MAX_CHUNKS
         config_mock.score_multiplier_mapping = {"vs_1": 1.5}
@@ -678,6 +680,7 @@ class TestFetchByokRag:
         byok_rag_mock.vector_db_id = "vs-internal-001"
         config_mock.rag.byok.stores = [byok_rag_mock]
         config_mock.rag.retrieval.inline.sources = ["my-kb"]
+        config_mock.rag.retrieval.tool.sources = []
         config_mock.rag.byok.max_chunks = constants.DEFAULT_BYOK_RAG_MAX_CHUNKS
         config_mock.score_multiplier_mapping = {"vs-internal-001": 1.0}
         config_mock.relevance_cutoff_mapping = {
@@ -729,6 +732,7 @@ class TestFetchByokRag:
             "kb-part1",
             "kb-part2",
         ]
+        config_mock.rag.retrieval.tool.sources = []
         config_mock.rag.byok.max_chunks = constants.DEFAULT_BYOK_RAG_MAX_CHUNKS
         config_mock.score_multiplier_mapping = {"vs-aaa-111": 1.0, "vs-bbb-222": 1.0}
         config_mock.relevance_cutoff_mapping = {
@@ -779,6 +783,7 @@ class TestFetchByokRag:
         byok_rag_mock.vector_db_id = "vs-internal-001"
         config_mock.rag.byok.stores = [byok_rag_mock]
         config_mock.rag.retrieval.inline.sources = ["my-kb"]
+        config_mock.rag.retrieval.tool.sources = []
         config_mock.rag.byok.max_chunks = constants.DEFAULT_BYOK_RAG_MAX_CHUNKS
         config_mock.score_multiplier_mapping = {"vs-internal-001": 1.0}
         config_mock.relevance_cutoff_mapping = {"vs-internal-001": 0.55}
@@ -873,6 +878,7 @@ class TestFetchByokRag:
         byok_rag_mock.vector_db_id = "vs-cutoff"
         config_mock.rag.byok.stores = [byok_rag_mock]
         config_mock.rag.retrieval.inline.sources = ["kb"]
+        config_mock.rag.retrieval.tool.sources = []
         config_mock.rag.byok.max_chunks = constants.DEFAULT_BYOK_RAG_MAX_CHUNKS
         config_mock.score_multiplier_mapping = {"vs-cutoff": 1.0}
         config_mock.relevance_cutoff_mapping = {"vs-cutoff": cutoff}
@@ -919,6 +925,7 @@ class TestFetchByokRag:
         """Test that BYOK inline RAG is skipped when rag.inline is empty."""
         config_mock = mocker.Mock(spec=AppConfig)
         config_mock.rag.retrieval.inline.sources = []
+        config_mock.rag.retrieval.tool.sources = []
         config_mock.rag.byok.stores = []
         mocker.patch("utils.vector_search.configuration", config_mock)
 
@@ -939,6 +946,7 @@ class TestFetchByokRag:
         """Test that a request vector_store_id not registered in rag.inline is filtered out."""
         config_mock = mocker.Mock(spec=AppConfig)
         config_mock.rag.retrieval.inline.sources = ["registered-id"]
+        config_mock.rag.retrieval.tool.sources = []
         config_mock.rag.byok.stores = []
         mocker.patch("utils.vector_search.configuration", config_mock)
 
@@ -1046,6 +1054,7 @@ class TestBuildRagContext:
         """Test when both BYOK inline and Solr inline are not configured."""
         config_mock = mocker.Mock(spec=AppConfig)
         config_mock.rag.retrieval.inline.sources = []
+        config_mock.rag.retrieval.tool.sources = []
         config_mock.rag.byok.stores = []
         config_mock.rag.retrieval.inline.max_chunks = (
             constants.DEFAULT_INLINE_RAG_MAX_CHUNKS
@@ -1070,6 +1079,7 @@ class TestBuildRagContext:
         byok_rag_mock.rag_id = "rag_1"
         byok_rag_mock.vector_db_id = "vs_1"
         config_mock.rag.retrieval.inline.sources = ["rag_1"]
+        config_mock.rag.retrieval.tool.sources = []
         config_mock.rag.byok.stores = [byok_rag_mock]
         config_mock.rag.retrieval.inline.max_chunks = (
             constants.DEFAULT_INLINE_RAG_MAX_CHUNKS
@@ -1114,6 +1124,7 @@ class TestBuildRagContext:
         byok_rag_mock.rag_id = "rag_1"
         byok_rag_mock.vector_db_id = "vs_1"
         config_mock.rag.retrieval.inline.sources = ["rag_1"]
+        config_mock.rag.retrieval.tool.sources = []
         config_mock.rag.byok.stores = [byok_rag_mock]
         config_mock.rag.retrieval.inline.max_chunks = (
             constants.DEFAULT_INLINE_RAG_MAX_CHUNKS
@@ -1172,6 +1183,7 @@ class TestBuildRagContext:
         byok_rag_mock.rag_id = "rag_1"
         byok_rag_mock.vector_db_id = "vs_1"
         config_mock.rag.retrieval.inline.sources = ["rag_1"]
+        config_mock.rag.retrieval.tool.sources = []
         config_mock.rag.byok.stores = [byok_rag_mock]
         config_mock.rag.retrieval.inline.max_chunks = (
             constants.DEFAULT_INLINE_RAG_MAX_CHUNKS
@@ -1683,6 +1695,7 @@ class TestBuildRagContextOtel:
         """Patch vector_search configuration for minimal inline RAG."""
         config_mock = mocker.Mock(spec=AppConfig)
         config_mock.rag.retrieval.inline.sources = []
+        config_mock.rag.retrieval.tool.sources = []
         config_mock.rag.byok.stores = []
         config_mock.rag.retrieval.inline.max_chunks = (
             constants.DEFAULT_INLINE_RAG_MAX_CHUNKS

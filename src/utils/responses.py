@@ -290,8 +290,15 @@ async def prepare_tools(  # pylint: disable=too-many-arguments,too-many-position
             configuration.configuration.rag.retrieval.tool.sources, byok_stores
         )
 
-    # Add RAG tools if vector stores are available
-    rag_tools = get_rag_tools(effective_ids)
+    # Add RAG tools if vector stores are available.
+    # Local FAISS stores are served by the knowledge_search function tool
+    # (SqliteFaissSearchCapability), so exclude them from the native file_search.
+    ogx_effective_ids = [
+        vs_id
+        for vs_id in effective_ids
+        if not _is_local_faiss_store(vs_id, byok_stores)
+    ]
+    rag_tools = get_rag_tools(ogx_effective_ids)
     if rag_tools:
         toolgroups.extend(rag_tools)
 
@@ -683,6 +690,18 @@ def resolve_vector_store_ids(
         constants.SOLR_DEFAULT_VECTOR_STORE_ID
     )
     return [rag_id_to_vector_db_id.get(vs_id, vs_id) for vs_id in vector_store_ids]
+
+
+def _is_local_faiss_store(vector_db_id: str, byok_stores: list[RagStore]) -> bool:
+    """Return True when the vector_db_id belongs to a locally-served FAISS store."""
+    for store in byok_stores:
+        if (
+            store.vector_db_id == vector_db_id
+            and store.backend == "faiss"
+            and store.db_path
+        ):
+            return True
+    return False
 
 
 def translate_tools_vector_store_ids(

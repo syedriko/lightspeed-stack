@@ -22,6 +22,7 @@ from log import get_logger
 from models.common.query import SolrVectorSearchRequest
 from models.common.responses.types import ResponseInput
 from models.common.turn_summary import RAGChunk, RAGContext, ReferencedDocument
+from models.config import RagStore
 from utils.otel_tracing import (
     SpanAttributes,
     SpanEvents,
@@ -31,6 +32,7 @@ from utils.otel_tracing import (
 )
 from utils.reranker import apply_byok_rerank_boost, rerank_chunks_with_cross_encoder
 from utils.responses import resolve_vector_store_ids
+from utils.sqlite_faiss import query_sqlite_faiss
 
 logger = get_logger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -257,6 +259,20 @@ def _format_rag_context(rag_chunks: list[RAGChunk], query: str) -> str:
     return output
 
 
+def _find_faiss_store_config(vector_store_id: str) -> Optional[RagStore]:
+    """Return the RagStore config if this store uses local FAISS retrieval.
+
+    A store qualifies when ``backend == "faiss"`` and ``db_path`` is set.
+    Returns None for pgvector or any store without a local db_path.
+    """
+    for store in configuration.rag.byok.stores:
+        if store.vector_db_id == vector_store_id:
+            if store.backend == "faiss" and store.db_path:
+                return store
+            return None
+    return None
+
+
 async def _query_store_for_byok_rag(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     client: AsyncOgxClient,
     vector_store_id: str,
@@ -266,6 +282,10 @@ async def _query_store_for_byok_rag(  # pylint: disable=too-many-arguments,too-m
     max_chunks: int = constants.DEFAULT_BYOK_RAG_MAX_CHUNKS,
 ) -> list[dict[str, Any]]:
     """Query a single vector store for BYOK RAG.
+
+    For ``backend: faiss`` stores with a ``db_path``, the query runs locally
+    against the SQLite kvstore file (no OGX round-trip). All other backends
+    delegate to ``client.vector_io.query``.
 
     Args:
         client: AsyncOgxClient for vector_io queries
@@ -279,15 +299,27 @@ async def _query_store_for_byok_rag(  # pylint: disable=too-many-arguments,too-m
         List of weighted result dictionaries, or empty list on error
     """
     try:
-        search_response = await client.vector_io.query(
-            vector_store_id=vector_store_id,
-            query=query,
-            params={
-                "max_chunks": max_chunks,
-                "mode": "vector",
-                "score_threshold": score_threshold,
-            },
-        )
+        # Check if this store should use local FAISS retrieval
+        store_config = _find_faiss_store_config(vector_store_id)
+        if store_config is not None:
+            search_response = await query_sqlite_faiss(
+                db_path=store_config.db_path,  # type: ignore[arg-type]
+                embedding_model=store_config.embedding_model,
+                query=query,
+                max_chunks=max_chunks,
+                score_threshold=score_threshold,
+                vector_store_id=vector_store_id,
+            )
+        else:
+            search_response = await client.vector_io.query(
+                vector_store_id=vector_store_id,
+                query=query,
+                params={
+                    "max_chunks": max_chunks,
+                    "mode": "vector",
+                    "score_threshold": score_threshold,
+                },
+            )
         return _extract_byok_rag_chunks(search_response, vector_store_id, weight)
     except (
         Exception  # pylint: disable=broad-exception-caught
@@ -484,7 +516,7 @@ async def _fetch_byok_rag(  # pylint: disable=too-many-locals
     # Per-request IDs are intersected with the config to prevent triggering inline RAG
     # for stores not explicitly configured for inline use.
     if vector_store_ids is None:
-        rag_ids_to_query = configuration.rag.retrieval.inline.sources
+        rag_ids_to_query = list(configuration.rag.retrieval.inline.sources)
     else:
         rag_ids_to_query = [
             v
