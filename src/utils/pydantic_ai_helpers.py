@@ -19,12 +19,16 @@ from models.common.tools import CatalogTool, CatalogToolParameter
 from models.config import (
     GraniteGuardianConfig,
     QuestionValidityConfig,
+    RagStore,
     RedactionConfig,
     ShieldConfiguration,
     SkillsConfiguration,
 )
 from pydantic_ai_lightspeed.capabilities import QuestionValidity
 from pydantic_ai_lightspeed.capabilities.redaction import PiiRedactionCapability
+from pydantic_ai_lightspeed.capabilities.sqlite_faiss_search import (
+    SqliteFaissSearchCapability,
+)
 from pydantic_ai_lightspeed.ogx import OgxResponsesModel
 from utils.shields import get_shields_for_request
 
@@ -250,6 +254,16 @@ def captured_output_items(agent: Any) -> list[Any]:
     return list(items)
 
 
+def _local_faiss_tool_stores(config: AppConfig) -> list[RagStore]:
+    """Return local FAISS stores configured for tool-based RAG."""
+    tool_rag_ids = set(config.rag.retrieval.tool.sources)
+    return [
+        store
+        for store in config.rag.byok.stores
+        if store.rag_id in tool_rag_ids and store.backend == "faiss" and store.db_path
+    ]
+
+
 def build_agent(
     client: AsyncOgxClient | AsyncOGXAsLibraryClient,
     responses_params: ResponsesApiParams,
@@ -281,6 +295,13 @@ def build_agent(
     """
     shield_configs = get_shields_for_request(config.shields, shields)
     capabilities = _agent_capabilities(config.skills, shield_configs, no_tools=no_tools)
+
+    if not no_tools:
+        local_faiss_stores = _local_faiss_tool_stores(config)
+        if local_faiss_stores:
+            capabilities = (capabilities or []) + [
+                SqliteFaissSearchCapability(stores=local_faiss_stores)
+            ]
 
     model = OgxResponsesModel.from_ogx_client(
         responses_params.model, client, responses_params=responses_params
