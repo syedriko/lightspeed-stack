@@ -17,6 +17,7 @@ from utils.sqlite_faiss import (
     KV_NAMESPACE,
     KV_VERSION,
     _kv_key,
+    _load_store_from_sqlite,
     _search_sqlite_faiss,
     list_vector_store_ids,
     query_sqlite_faiss,
@@ -88,10 +89,8 @@ class TestSearchSqliteFaiss:
     def test_returns_nearest_chunk(self, tmp_path: Path) -> None:
         """Closest embedding is returned first."""
         db_path, embeddings = _create_test_db(tmp_path)
-        # Query with the exact embedding of chunk 0 — should return chunk 0 first
-        response = _search_sqlite_faiss(
-            db_path, "vs_test", embeddings[0], k=1, score_threshold=0.0
-        )
+        cached = _load_store_from_sqlite(db_path, "vs_test")
+        response = _search_sqlite_faiss(cached, embeddings[0], k=1, score_threshold=0.0)
         assert len(response.chunks) == 1
         assert response.chunks[0].content == "chunk 0"
         assert response.scores[0] == pytest.approx(1.0, abs=0.01)
@@ -99,18 +98,15 @@ class TestSearchSqliteFaiss:
     def test_respects_k_limit(self, tmp_path: Path) -> None:
         """At most k chunks are returned."""
         db_path, embeddings = _create_test_db(tmp_path)
-        response = _search_sqlite_faiss(
-            db_path, "vs_test", embeddings[0], k=2, score_threshold=0.0
-        )
+        cached = _load_store_from_sqlite(db_path, "vs_test")
+        response = _search_sqlite_faiss(cached, embeddings[0], k=2, score_threshold=0.0)
         assert len(response.chunks) == 2
 
     def test_respects_score_threshold(self, tmp_path: Path) -> None:
         """Chunks below the threshold are excluded."""
         db_path, embeddings = _create_test_db(tmp_path)
-        # With threshold=1.0, only exact matches (distance=0) qualify
-        response = _search_sqlite_faiss(
-            db_path, "vs_test", embeddings[0], k=3, score_threshold=1.0
-        )
+        cached = _load_store_from_sqlite(db_path, "vs_test")
+        response = _search_sqlite_faiss(cached, embeddings[0], k=3, score_threshold=1.0)
         assert len(response.chunks) == 1
         assert response.chunks[0].content == "chunk 0"
 
@@ -125,13 +121,7 @@ class TestSearchSqliteFaiss:
         conn.close()
 
         with pytest.raises(KeyError, match="FAISS index not found"):
-            _search_sqlite_faiss(
-                db_path,
-                "vs_missing",
-                np.zeros(8, dtype=np.float32),
-                k=1,
-                score_threshold=0.0,
-            )
+            _load_store_from_sqlite(db_path, "vs_missing")
 
 
 class TestListVectorStoreIds:
@@ -173,6 +163,8 @@ class TestQuerySqliteFaiss:
         mocker.patch(
             "utils.sqlite_faiss._get_embedding_model", side_effect=_fake_get_model
         )
+        # Clear the store cache so the test DB is loaded fresh
+        mocker.patch.dict("utils.sqlite_faiss._store_cache", clear=True)
         response = await query_sqlite_faiss(
             db_path=db_path,
             embedding_model="test-model",

@@ -53,27 +53,45 @@ class _SearchResponse:
     scores: list[float]
 
 
-def _search_sqlite_faiss(  # pylint: disable=too-many-locals
-    db_path: str,
-    vector_store_id: str,
-    query_embedding: np.ndarray,
-    k: int,
-    score_threshold: float,
-) -> _SearchResponse:
-    """Search a local sqlite-faiss file (blocking I/O).
+@dataclass
+class _CachedStore:
+    """In-memory cache entry for a deserialized FAISS index and its chunks."""
 
-    Parameters:
-        db_path: Path to the kvstore SQLite file.
-        vector_store_id: Store id used when the file was written.
-        query_embedding: Query vector (1-D float32 array).
-        k: Maximum number of nearest neighbors.
-        score_threshold: Minimum L2 distance threshold (lower is better for L2;
-            results with distance > 1/score_threshold are excluded when
-            score_threshold > 0).
+    index: faiss.Index
+    chunk_by_index: dict[str, str]
 
-    Returns:
-        _SearchResponse with chunks and L2-distance-based scores.
+
+_store_cache: dict[tuple[str, str], _CachedStore] = {}
+_store_cache_lock = asyncio.Lock()
+
+
+async def _get_cached_store(db_path: str, vector_store_id: str) -> _CachedStore:
+    """Return a cached FAISS index + chunk map, loading from SQLite on first access.
+
+    The database file is read-only at serving time, so entries are cached
+    unconditionally for the lifetime of the process.
     """
+    cache_key = (db_path, vector_store_id)
+    if cache_key in _store_cache:
+        return _store_cache[cache_key]
+    async with _store_cache_lock:
+        if cache_key in _store_cache:
+            return _store_cache[cache_key]
+        store = await asyncio.to_thread(
+            _load_store_from_sqlite, db_path, vector_store_id
+        )
+        _store_cache[cache_key] = store
+        logger.info(
+            "Cached FAISS index for %s (store=%s, vectors=%d)",
+            db_path,
+            vector_store_id,
+            store.index.ntotal,
+        )
+    return _store_cache[cache_key]
+
+
+def _load_store_from_sqlite(db_path: str, vector_store_id: str) -> _CachedStore:
+    """Read and deserialize a FAISS store from the SQLite kvstore (blocking)."""
     connection = sqlite3.connect(db_path)
     try:
         row = connection.execute(
@@ -85,12 +103,33 @@ def _search_sqlite_faiss(  # pylint: disable=too-many-locals
 
     if row is None:
         raise KeyError(
-            f"FAISS index not found for vector_store_id={vector_store_id!r} in {db_path}"
+            f"FAISS index not found for vector_store_id="
+            f"{vector_store_id!r} in {db_path}"
         )
 
     payload = json.loads(row[0])
     index = _deserialize_faiss_index(payload["faiss_index"])
+    return _CachedStore(index=index, chunk_by_index=payload["chunk_by_index"])
 
+
+def _search_sqlite_faiss(  # pylint: disable=too-many-locals
+    cached_store: _CachedStore,
+    query_embedding: np.ndarray,
+    k: int,
+    score_threshold: float,
+) -> _SearchResponse:
+    """Search a cached FAISS index (blocking, CPU-bound).
+
+    Parameters:
+        cached_store: Pre-loaded FAISS index and chunk map.
+        query_embedding: Query vector (1-D float32 array).
+        k: Maximum number of nearest neighbors.
+        score_threshold: Minimum similarity score to include.
+
+    Returns:
+        _SearchResponse with chunks and L2-distance-based scores.
+    """
+    index = cached_store.index
     query = query_embedding.reshape(1, -1).astype(np.float32)
     distances, labels = index.search(query, min(k, index.ntotal))
 
@@ -100,11 +139,10 @@ def _search_sqlite_faiss(  # pylint: disable=too-many-locals
     for distance, label in zip(distances[0], labels[0], strict=True):
         if int(label) < 0:
             continue
-        # Convert L2 distance to a similarity score: 1 / (1 + distance)
         similarity = 1.0 / (1.0 + float(distance))
         if similarity < score_threshold:
             continue
-        chunk_data = json.loads(payload["chunk_by_index"][str(int(label))])
+        chunk_data = json.loads(cached_store.chunk_by_index[str(int(label))])
         chunks.append(
             _ChunkResult(
                 content=chunk_data["content"],
@@ -167,10 +205,11 @@ async def query_sqlite_faiss(  # pylint: disable=too-many-arguments,too-many-pos
     query_embedding = await asyncio.to_thread(model.encode, query)
     query_embedding = np.asarray(query_embedding, dtype=np.float32)
 
+    cached_store = await _get_cached_store(db_path, vector_store_id)
+
     return await asyncio.to_thread(
         _search_sqlite_faiss,
-        db_path,
-        vector_store_id,
+        cached_store,
         query_embedding,
         max_chunks,
         score_threshold,
