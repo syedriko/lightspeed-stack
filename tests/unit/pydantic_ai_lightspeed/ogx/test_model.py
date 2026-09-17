@@ -211,6 +211,7 @@ class TestPrepareCompactedInput:
         assert "input" not in result["extra_body"]
         assert result["extra_body"]["max_infer_iters"] == 5
         # original settings untouched
+        assert isinstance(settings["extra_body"], dict)
         assert "input" in settings["extra_body"]
 
 

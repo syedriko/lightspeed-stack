@@ -6,6 +6,8 @@ relationships when flowing through the query endpoint and its
 downstream components.
 """
 
+from typing import Any
+
 import pytest
 from fastapi import Request
 from opentelemetry import context as otel_context
@@ -29,7 +31,7 @@ def _clear_spans(otel_collector: InMemorySpanExporter) -> None:
     otel_collector.clear()
 
 
-def _inject_w3c_context(traceparent: str) -> object:
+def _inject_w3c_context(traceparent: str) -> Any:
     """Extract a W3C traceparent header into OTel context and attach it.
 
     Parameters:

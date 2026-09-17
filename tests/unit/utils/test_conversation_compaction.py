@@ -172,8 +172,8 @@ def test_reject_image_attachments_in_compacted_mode_raises_422() -> None:
 
     assert exc_info.value.status_code == 422
     detail = exc_info.value.detail
-    assert "Image attachments are not supported" in detail["response"]
-    assert "compacted" in detail["cause"]
+    assert "Image attachments are not supported" in detail["response"]  # type: ignore[index]
+    assert "compacted" in detail["cause"]  # type: ignore[index]
 
 
 def test_agent_prompt_text_empty_list_returns_empty() -> None:
