@@ -147,11 +147,11 @@ async def test_info_endpoint_connection_error(mocker: MockerFixture) -> None:
     with pytest.raises(HTTPException) as e:
         await info_endpoint_handler(auth=auth, request=request)
         assert e.value.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        assert e.value.detail["response"] == "Service unavailable"  # type: ignore
+        assert e.value.detail["response"] == "Service unavailable"  # type: ignore[index]
         assert (
             "Connection error while trying to reach backend service."
-            in e.value.detail["cause"]
-        )  # type: ignore
+            in e.value.detail["cause"]  # type: ignore[index]
+        )
 
 
 class TestInfoEndpointOtel:

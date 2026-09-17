@@ -1017,7 +1017,7 @@ class TestConversationsV2Otel:
         assert len(spans) == 1
         span = spans[0]
         assert span.name == "conversations_v2.list"
-        assert span.attributes["conversations.count"] == 2
+        assert span.attributes["conversations.count"] == 2  # type: ignore[index]
 
     @pytest.mark.asyncio
     async def test_list_span_records_error(
@@ -1089,8 +1089,8 @@ class TestConversationsV2Otel:
         assert len(spans) == 1
         span = spans[0]
         assert span.name == "conversations_v2.get"
-        assert span.attributes["conversations.found"] is True
-        assert span.attributes["conversations.turns.count"] == 2
+        assert span.attributes["conversations.found"] is True  # type: ignore[index]
+        assert span.attributes["conversations.turns.count"] == 2  # type: ignore[index]
 
     @pytest.mark.asyncio
     async def test_get_span_records_error_on_not_found(
@@ -1144,7 +1144,7 @@ class TestConversationsV2Otel:
         assert len(spans) == 1
         span = spans[0]
         assert span.name == "conversations_v2.delete"
-        assert span.attributes["conversations.deleted"] is True
+        assert span.attributes["conversations.deleted"] is True  # type: ignore[index]
 
     @pytest.mark.asyncio
     async def test_delete_span_records_error(
@@ -1202,7 +1202,7 @@ class TestConversationsV2Otel:
         assert len(spans) == 1
         span = spans[0]
         assert span.name == "conversations_v2.update"
-        assert span.attributes["conversations.updated"] is True
+        assert span.attributes["conversations.updated"] is True  # type: ignore[index]
 
     @pytest.mark.asyncio
     async def test_update_span_records_error_on_not_found(

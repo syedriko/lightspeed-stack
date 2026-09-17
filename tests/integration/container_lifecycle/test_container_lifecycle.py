@@ -55,10 +55,10 @@ def container_runtime() -> str:
 def _run_container_command(
     cmd: list[str],
     *,
-    capture_output=True,
-    text=True,
-    timeout=DEFAULT_TIMEOUT,
-    check=False,
+    capture_output: bool = True,
+    text: bool = True,
+    timeout: int = DEFAULT_TIMEOUT,
+    check: bool = False,
 ) -> CompletedProcess[Any]:
     """Run a container command as a subprocess.
 
@@ -82,7 +82,7 @@ def _run_container_command(
 class TestContainerLifecycle:
     """Integration tests for OGX container lifecycle management."""
 
-    def test_container_lifecycle(self, container_runtime):
+    def test_container_lifecycle(self, container_runtime: str) -> None:
         """Verify the full container lifecycle: build, start, health, files, and cleanup."""
         # Make sure we start clean
         _run_container_command(

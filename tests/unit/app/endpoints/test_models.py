@@ -456,11 +456,11 @@ async def test_models_endpoint_ogx_connection_error(
             request=request, auth=auth, model_type=ModelFilter(model_type=None)
         )
         assert e.value.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        assert e.value.detail["response"] == "Unable to connect to OGX"  # type: ignore
+        assert e.value.detail["response"] == "Unable to connect to OGX"  # type: ignore[index]
         assert (
             "Connection error while trying to reach backend service."
-            in e.value.detail["cause"]
-        )  # type: ignore
+            in e.value.detail["cause"]  # type: ignore[index]
+        )
 
 
 class TestModelsEndpointOtel:

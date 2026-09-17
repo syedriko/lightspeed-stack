@@ -679,13 +679,12 @@ class TestQueryCompactedTurnPersistence:
         stored: list[Any] = []
 
         async def _create(
-            conversation_id: str, *, add_items_request: Any = None, **_: Any
+            _conversation_id: str, *, add_items_request: Any = None, **_: Any
         ) -> None:
-            _ = conversation_id
             stored.extend(getattr(add_items_request, "items", add_items_request) or [])
 
         client = mocker.AsyncMock()
-        client.items.create = _create
+        client.items.create = _create  # type: ignore[assignment]
         return client, stored
 
     @pytest.mark.asyncio

@@ -1317,7 +1317,7 @@ class TestA2AOtelSpans:
         execute_spans = [s for s in spans if s.name == "a2a.execute"]
         assert len(execute_spans) == 1
         span = execute_spans[0]
-        attrs = dict(span.attributes or {})
+        attrs: dict[str, Any] = dict(span.attributes or {})
 
         assert attrs["session.id"] == "ctx-456"
         assert attrs["llm.model.id"] == "watsonx/granite-3.1"
@@ -1426,7 +1426,7 @@ class TestA2AOtelSpans:
         execute_spans = [s for s in spans if s.name == "a2a.execute"]
         assert len(execute_spans) == 1
         span = execute_spans[0]
-        attrs = dict(span.attributes or {})
+        attrs: dict[str, Any] = dict(span.attributes or {})
 
         assert attrs["tool.calls.count"] == 2
         assert "get_weather" in attrs["tool.calls.names"]
@@ -1578,7 +1578,7 @@ class TestA2AOtelSpans:
         dispatch_spans = [s for s in spans if s.name == "a2a.dispatch"]
         assert len(dispatch_spans) == 1
         span = dispatch_spans[0]
-        attrs = dict(span.attributes or {})
+        attrs: dict[str, Any] = dict(span.attributes or {})
 
         assert attrs["a2a.rpc.method"] == "message/send"
         assert attrs["a2a.request.id"].startswith("[hash:")
@@ -1646,7 +1646,7 @@ class TestA2AOtelSpans:
         dispatch_spans = [s for s in spans if s.name == "a2a.dispatch"]
         assert len(dispatch_spans) == 1
         span = dispatch_spans[0]
-        attrs = dict(span.attributes or {})
+        attrs: dict[str, Any] = dict(span.attributes or {})
 
         assert attrs["a2a.rpc.method"] == "message/stream"
         assert attrs["a2a.request.id"].startswith("[hash:")
